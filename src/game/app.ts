@@ -46,6 +46,8 @@ export class App {
   private pausedSpeed = 1;
   private banner: HTMLDivElement;
   private rapierLoading = false;
+  /** Called when the ragdoll physics engine finishes loading or fails to load. */
+  onPhysicsState: ((state: 'loading' | 'ready' | 'failed') => void) | null = null;
 
   private raf = 0;
   private lastFrame = 0;
@@ -78,6 +80,7 @@ export class App {
   loadPhysicsLater(): void {
     if (this.rapierLoading) return;
     this.rapierLoading = true;
+    this.onPhysicsState?.('loading');
     const go = () => {
       loadRapier()
         .then((R) => {
@@ -85,10 +88,12 @@ export class App {
           if (this.scene.terrainData) {
             this.ragdolls.setTerrain(this.scene.terrainData.physicsVertices, this.scene.terrainData.physicsIndices, this.terrain.killY);
           }
+          this.onPhysicsState?.('ready');
         })
         .catch((err: unknown) => {
           // Without Rapier everything still works: deaths and tumbles use the shader fallbacks.
           console.warn('Ragdoll physics unavailable, using shader fallbacks.', err);
+          this.onPhysicsState?.('failed');
         });
     };
     setTimeout(go, 300);

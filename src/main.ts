@@ -45,7 +45,8 @@ if (!hasWebGL2()) {
   app.loadMap(mapId);
   const setup = devSetupFromUrl(location.search) ?? presetSetup(0, mapId, 4242);
   void app.startBattle(setup);
-  createDevPanel(ui, (s) => void app.startBattle(s), app.map.id);
+  const panel = createDevPanel(ui, (s) => void app.startBattle(s), app.map.id);
+  app.onPhysicsState = (state) => panel.setPhysics(state);
   app.start();
   app.loadPhysicsLater();
   (window as unknown as { app: App }).app = app;

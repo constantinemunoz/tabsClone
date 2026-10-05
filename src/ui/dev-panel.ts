@@ -24,7 +24,12 @@ export function presetSetup(index: number, mapId: string, seed: number): BattleS
   };
 }
 
-export function createDevPanel(parent: HTMLElement, onStart: (s: BattleSetup) => void, initialMap: string): HTMLElement {
+export interface DevPanel {
+  el: HTMLElement;
+  setPhysics(state: 'loading' | 'ready' | 'failed'): void;
+}
+
+export function createDevPanel(parent: HTMLElement, onStart: (s: BattleSetup) => void, initialMap: string): DevPanel {
   const el = document.createElement('div');
   el.className = 'dev-panel';
   const title = document.createElement('div');
@@ -72,6 +77,20 @@ export function createDevPanel(parent: HTMLElement, onStart: (s: BattleSetup) =>
     '<b>Space</b> pause · <b>1</b> 0.25x · <b>2</b> 1x · <b>3</b> 2x<br>' +
     '<b>R</b> restart · <b>`</b> stats';
   el.appendChild(help);
+
+  const physics = document.createElement('div');
+  physics.className = 'dev-panel-physics';
+  el.appendChild(physics);
+  const setPhysics = (state: 'loading' | 'ready' | 'failed') => {
+    physics.dataset.state = state;
+    physics.textContent =
+      state === 'ready'
+        ? 'Ragdoll physics on'
+        : state === 'failed'
+          ? 'Ragdoll physics unavailable here: deaths and tumbles use the simple fallback animations'
+          : 'Loading ragdoll physics…';
+  };
+  setPhysics('loading');
   parent.appendChild(el);
-  return el;
+  return { el, setPhysics };
 }

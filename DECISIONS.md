@@ -69,3 +69,8 @@ Choices the brief did not settle, one or two lines each.
   cliffs), shared with the renderer's data so ragdolls rest exactly on the drawn ground.
 - **Skin is not team-tinted**: tinted skin looked muddy. Team colour is on clothes and limbs.
 - **Temporary dev panel**: preset battles and a map picker until the real menus exist (M5).
+- **Hosted play-test build** (`npm run build:hosted`, output in `dist-hosted/`): for hosts that only
+  allow scripts from public CDNs, three and Rapier are imported from pinned jsDelivr URLs and the
+  game's own code ships unminified. The normal `npm run build` stays fully self-contained.
+  Where a host forbids WebAssembly compilation, Rapier fails to load, the game falls back to the
+  shader-only ragdolls, and the test panel says so.
