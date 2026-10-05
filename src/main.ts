@@ -1,6 +1,7 @@
 import './ui/styles.css';
 import { GAME_TITLE } from './config.ts';
 import { App } from './game/app.ts';
+import { devSetupFromUrl } from './game/dev-battles.ts';
 
 function hasWebGL2(): boolean {
   try {
@@ -40,6 +41,8 @@ if (!hasWebGL2()) {
 } else {
   const app = new App(canvas, ui);
   app.loadMap(new URLSearchParams(location.search).get('map') ?? 'meadow');
+  const setup = devSetupFromUrl(location.search);
+  if (setup) void app.startBattle(setup);
   app.start();
   (window as unknown as { app: App }).app = app;
 }

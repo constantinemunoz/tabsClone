@@ -11,6 +11,7 @@ export interface DevStats {
   resolutionScale: number;
   tier: string;
   simTick: number;
+  snapshotBuffers: number;
 }
 
 /**
@@ -30,6 +31,7 @@ export class DevOverlay {
     resolutionScale: 1,
     tier: '',
     simTick: 0,
+    snapshotBuffers: 0,
   };
   visible = false;
   private readonly el: HTMLDivElement;
@@ -85,7 +87,7 @@ export class DevOverlay {
         `units      ${s.alive} / ${s.units}\n` +
         `ragdolls   ${s.ragdolls}\n` +
         `projectile ${s.projectiles}\n` +
-        `sim tick   ${s.simTick}\n` +
+        `sim tick   ${s.simTick}  (buffers ${s.snapshotBuffers})\n` +
         `quality    ${s.tier}  res x${s.resolutionScale.toFixed(2)}`;
     }
     this.frames = 0;

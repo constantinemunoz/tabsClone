@@ -24,3 +24,23 @@ Choices the brief did not settle, one or two lines each.
 - **Static hosting**: Vite `base: './'` so the build works from a domain root or any subfolder.
 - **Quality auto-detect**: from the unmasked GPU renderer string, core count and device memory.
   Software renderers (SwiftShader, llvmpipe) and mobile GPUs start on low.
+- **Who drives the clock**: the main thread. Each frame it advances `simTime` by real time x speed
+  and asks the worker for the ticks now due (at most 4 per frame; extra time is dropped so a slow
+  machine slows the battle). It renders one tick behind the previous frame's `simTime`, which is
+  always between the two latest snapshots once the worker has answered.
+- **Snapshot transport**: one ArrayBuffer per tick (header, units, projectiles, events), transferred
+  and returned with the next step request. The only per-tick allocation left is the small
+  `Float32Array` view wrapper a transferred buffer needs, which the transfer API makes unavoidable.
+- **Who retargets**: only units in Idle or Seek; a unit mid-swing keeps its target.
+- **Melee reach**: a melee unit only starts a wind-up if its weapon can reach the target
+  vertically, so units below a cliff don't swing at people standing on top of it.
+- **Variety without chaos**: hits deal 90-110% of listed damage (seeded RNG), and each unit's first
+  swing is delayed by 0-11 ticks so crowds never attack in lockstep.
+- **Tumbling**: a hit tumbles its target when the velocity change exceeds 5.5 m/s. Gravity is
+  18 m/s^2. A killing blow does not set Tumbling; the death event carries the launch velocity.
+- **Map edges**: on maps without void, units are kept inside the heightmap domain. On the sky
+  island they simply fall.
+- **Extra event type**: `strike` (a swing or shot happened), alongside the brief's list, for swish
+  sounds and the body lurch.
+- **Unit order**: the five melee archetypes are defined as data in M2 (tests use them); their
+  procedural looks arrive in M3, the other five units in M4.
