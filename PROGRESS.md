@@ -22,7 +22,8 @@
   at tick 1854 with no errors; the worker allocated 5 snapshot buffers in total.
 
 - **M3 Wobble and ragdolls**: procedural unit bodies (rounded torso, round head, stubby limbs,
-  googly eyes with sliding pupils, a hat and a weapon per type; 790-930 triangles each, indexed).
+  googly eyes with sliding pupils, a hat and a weapon per type; 790-930 triangles each, indexed;
+  replaced by human proportions after M5, see below).
   The wobble lives in the vertex shader: walk cycle with stumble and waddle, body bend weighted
   by height squared along a per-unit damped spring, delayed head wobble, arms that lag the lean,
   squash and stretch, idle sway, and per-style attack curves (overhead swing, spear thrust,
@@ -66,6 +67,11 @@
   local storage; share links and codes. Measured in the browser (headless Chromium): a full
   click-and-drag placement, battle, result and share run with no console errors, and opening
   the share link in a fresh browser reproduced the exact setup and seed.
+- **Unit look rework** (requested after M5): human proportions instead of big heads and googly
+  eyes. Shaped torso, neck, elbows and knees, a small face, beards, cuirasses, greaves and
+  trousers per type, team-painted hoplite shields, a slimmer horse with a longer head. Measured
+  mesh sizes: people 836-1103 triangles (before: 855-1074), horse and rider 1716 (before: 1623).
+  Card portraits now frame people from the knees up.
 
 ## Next
 - M6 Polish: particles, camera shake, hit-pause, final-kill slow motion, audio, lighting and UI
@@ -81,7 +87,6 @@
 - After a shader-only tumble (ragdoll budget spent), the get-up starts from a lying pose, so the
   landing pose pops. Ragdoll tumbles blend properly.
 - Ragdolls use unconstrained ball joints, so limbs can bend unnaturally far (intentionally floppy).
-- The test-battle panel is temporary and is replaced by the real menus in M5.
 - The horizon band below the sky on the meadow and mesas (far ground plane through fog) is a bit
   muddy; revisit in the polish milestone.
 - Browser frame rates measured in this container use SwiftShader (software WebGL), so they say

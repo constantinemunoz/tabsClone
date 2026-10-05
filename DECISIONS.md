@@ -125,3 +125,15 @@ Choices the brief did not settle, one or two lines each.
   pointer-transparent except for panels, buttons and dialogs.
 - **Placement view**: placed units are drawn with the same wobble shader (idle sway) in their own
   instanced batches, plus a pale ghost of the unit under the cursor when the spot is valid.
+- **Human proportions** (after M5, at the user's request: the big-headed, googly-eyed bodies read
+  as cartoon mascots): bodies are about seven heads tall, with a shaped torso (a lathe:
+  shoulders wider than the waist), a neck, two-segment arms and legs with elbows and knees baked
+  into the rigid parts, a small face (dark eyes, brows, nose, ears) and per-type outfits (bronze
+  or linen cuirass, greaves, beards, Scythian trousers). The comedy now comes from the wobble,
+  not the proportions. The rig is unchanged (six rigid parts, same pivots, same ragdoll bodies),
+  so animation, ragdolls and corpses needed only new sizes.
+- **Team colour on the new bodies**: tunic, skirt and sleeves stay team-coloured, armour hides
+  the chest, so hoplite-type shields are painted in the team colour (with a bronze rim and boss)
+  and the horse wears a team-coloured saddle cloth down both flanks.
+- **Walk cycle for long legs**: hip swing is a per-material amplitude (0.5 rad for people, 0.8
+  for horses) and the default stride is 1.7 m per cycle, so feet don't skate.

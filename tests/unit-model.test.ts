@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UNITS } from '../src/data/units.ts';
-import { buildUnitModel, PART_PUPIL_R } from '../src/render/unit-model.ts';
+import { buildUnitModel, RAGDOLL_PARTS } from '../src/render/unit-model.ts';
 
 describe('unit models', () => {
   for (const d of UNITS) {
@@ -12,7 +12,7 @@ describe('unit models', () => {
       const part = g.getAttribute('aPart');
       const seen = new Set<number>();
       for (let k = 0; k < part.count; k++) seen.add(part.getX(k));
-      for (let p = 0; p <= PART_PUPIL_R; p++) expect(seen.has(p)).toBe(true);
+      for (let p = 0; p < RAGDOLL_PARTS; p++) expect(seen.has(p)).toBe(true);
       expect(m.layout.parts.length).toBe(6);
       console.log(`${d.id}: ${verts} vertices, ${tris} triangles`);
       // Keep bodies light: hundreds of these are on screen at once. Horse and rider get more.

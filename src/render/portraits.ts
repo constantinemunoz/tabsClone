@@ -63,12 +63,13 @@ export function renderPortraits(renderer: WebGLRenderer, defs: UnitDef[]): strin
     const mesh = new Mesh(geo, mat.material);
     mesh.frustumCulled = false;
     scene.add(mesh);
-    // Three-quarter view, framed on the whole body.
+    // Three-quarter view. People are framed from the knees up so faces and helmets read;
+    // a horse is longer than it is tall, so horse and rider get the whole body, wider and lower.
     const h = model.layout.height;
-    // A horse is longer than it is tall; frame it a little wider and lower.
-    const wide = model.horse ? 1.12 : 1;
-    camera.position.set(h * 1.25 * wide, h * 0.72, h * 1.9 * wide);
-    camera.lookAt(0, h * (model.horse ? 0.45 : 0.5), 0);
+    const lookY = h * (model.horse ? 0.45 : 0.6);
+    if (model.horse) camera.position.set(h * 1.4, lookY + h * 0.25, h * 2.13);
+    else camera.position.set(h * 0.66, lookY + h * 0.18, h * 1.68);
+    camera.lookAt(0, lookY, 0);
     for (let team = 0; team < 2; team++) {
       data.fill(0);
       data[3] = 0.25;

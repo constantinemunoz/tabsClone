@@ -82,10 +82,10 @@ export type GearKind =
   | 'marine';
 
 export interface UnitVisual {
-  /** Uniform scale applied to the procedural body (1 = a 1.6 m tall person). */
+  /** Uniform scale applied to the procedural body (1 = a 1.65 m tall person). */
   scale: number;
-  /** Body proportions, relative to the default build. */
-  belly: number;
+  /** Body proportions relative to the default: shoulder and chest breadth, head and limb size. */
+  build: number;
   headSize: number;
   limbThickness: number;
   /** 'horse' puts the person on a horse. */
@@ -179,13 +179,13 @@ const dagger = (damage: number): WeaponDef =>
 
 const person = (v: Partial<UnitVisual>): UnitVisual => ({
   scale: 1,
-  belly: 1,
+  build: 1,
   headSize: 1,
   limbThickness: 1,
   body: 'person',
   hat: 'none',
   gear: 'hoplite',
-  stride: 1.25,
+  stride: 1.7,
   wobbleStiffness: 60,
   wobbleDamping: 3.6,
   wobbleGain: 1,
@@ -215,7 +215,7 @@ export const UNITS: UnitDef[] = [
     hoverHeight: 0,
     knockbackResist: 0.35,
     frontDamageMult: 0.45,
-    visual: person({ scale: 1.08, belly: 1.15, hat: 'corinthian', gear: 'hoplite', wobbleStiffness: 85, wobbleDamping: 5, wobbleGain: 0.9 }),
+    visual: person({ scale: 1.08, build: 1.15, hat: 'corinthian', gear: 'hoplite', wobbleStiffness: 85, wobbleDamping: 5, wobbleGain: 0.9 }),
   },
   {
     id: 'spartan',
@@ -239,7 +239,7 @@ export const UNITS: UnitDef[] = [
     hoverHeight: 0,
     knockbackResist: 0.45,
     frontDamageMult: 0.4,
-    visual: person({ scale: 1.14, belly: 1.05, limbThickness: 1.15, hat: 'spartan', gear: 'spartan', wobbleStiffness: 95, wobbleDamping: 5.5, wobbleGain: 0.85 }),
+    visual: person({ scale: 1.14, build: 1.05, limbThickness: 1.15, hat: 'spartan', gear: 'spartan', wobbleStiffness: 95, wobbleDamping: 5.5, wobbleGain: 0.85 }),
   },
   {
     id: 'peltast',
@@ -294,7 +294,7 @@ export const UNITS: UnitDef[] = [
     hoverHeight: 0,
     knockbackResist: 0,
     frontDamageMult: 1,
-    visual: person({ belly: 0.9, hat: 'headband', gear: 'skirmisher', wobbleStiffness: 48, wobbleDamping: 2.9, wobbleGain: 1.2 }),
+    visual: person({ build: 0.9, hat: 'headband', gear: 'skirmisher', wobbleStiffness: 48, wobbleDamping: 2.9, wobbleGain: 1.2 }),
   },
   {
     id: 'archer',
@@ -321,7 +321,7 @@ export const UNITS: UnitDef[] = [
     hoverHeight: 0,
     knockbackResist: 0,
     frontDamageMult: 1,
-    visual: person({ belly: 0.92, hat: 'scythian', gear: 'archer', wobbleStiffness: 50, wobbleDamping: 3, wobbleGain: 1.1 }),
+    visual: person({ build: 0.92, hat: 'scythian', gear: 'archer', wobbleStiffness: 50, wobbleDamping: 3, wobbleGain: 1.1 }),
   },
   {
     id: 'slinger',
@@ -348,7 +348,7 @@ export const UNITS: UnitDef[] = [
     hoverHeight: 0,
     knockbackResist: 0,
     frontDamageMult: 1,
-    visual: person({ belly: 0.95, hat: 'none', gear: 'slinger', wobbleStiffness: 50, wobbleDamping: 3, wobbleGain: 1.1 }),
+    visual: person({ build: 0.95, hat: 'none', gear: 'slinger', wobbleStiffness: 50, wobbleDamping: 3, wobbleGain: 1.1 }),
   },
   {
     id: 'horseman',
@@ -411,7 +411,7 @@ export const UNITS: UnitDef[] = [
     hoverHeight: 0,
     knockbackResist: 0.25,
     frontDamageMult: 0.55,
-    visual: person({ scale: 1.05, belly: 1.08, hat: 'pilos', gear: 'marine', wobbleStiffness: 75, wobbleDamping: 4.5, wobbleGain: 0.95 }),
+    visual: person({ scale: 1.05, build: 1.08, hat: 'pilos', gear: 'marine', wobbleStiffness: 75, wobbleDamping: 4.5, wobbleGain: 0.95 }),
   },
 ];
 

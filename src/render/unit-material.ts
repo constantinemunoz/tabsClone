@@ -51,11 +51,12 @@ const LIVE_PARS = /* glsl */ `
   uniform float uAttackStyle2;
   uniform float uFloppy;
   uniform float uWaddle;
+  uniform float uLegSwing;
   uniform float uFlopSide;
 `;
 
 /**
- * The wobble. Order: limbs about their joints, head, pupils, waddle, whole-body bend along the
+ * The wobble. Order: limbs about their joints, head, waddle, whole-body bend along the
  * spring (weighted by height squared so the feet stay planted), squash and stretch, then the
  * fallback tumble / death flop / get-up poses, then scale, yaw and position.
  */
@@ -159,13 +160,13 @@ const LIVE_BODY = /* glsl */ `
     }
   }
 
-  float side = (part == 2.0 || part == 4.0 || part == 6.0) ? 1.0 : -1.0;
+  float side = (part == 2.0 || part == 4.0) ? 1.0 : -1.0;
 
   // Legs: swing about the hip from the walk phase, with a little stumble.
   if (part == 4.0 || part == 5.0) {
     float ph = walk + (part == 4.0 ? 0.0 : 3.14159);
-    float stumble = sin(walk * 0.5 + seed * 6.28 + side) * 0.2;
-    float legSwing = (sin(ph) * 0.8 + stumble) * spd;
+    float stumble = sin(walk * 0.5 + seed * 6.28 + side) * 0.25 * uLegSwing;
+    float legSwing = (sin(ph) + stumble) * uLegSwing * spd;
     vec3 q = p - aPivot;
     q = rotX(-legSwing) * q;
     q.y += max(0.0, cos(ph)) * 0.06 * spd;
@@ -176,7 +177,7 @@ const LIVE_BODY = /* glsl */ `
   if (part == 2.0 || part == 3.0) {
     float ph = walk + (part == 2.0 ? 3.14159 : 0.0);
     float noise = sin(t * 2.3 + side * 1.7) * 0.14 + sin(t * 5.1 + side) * 0.05;
-    float armSwing = sin(ph) * 0.6 * spd + noise * uFloppy - lean.y * 2.2 - vl.z * 0.06;
+    float armSwing = sin(ph) * 0.5 * spd + noise * uFloppy - lean.y * 2.2 - vl.z * 0.06;
     float flap = 0.14 + abs(lean.x) * 0.8 + spd * 0.12 + 0.06 * sin(t * 3.1 + side) * uFloppy - side * lean.x * 0.9;
     float push = 0.0;
     float spin = 0.0;
@@ -207,18 +208,10 @@ const LIVE_BODY = /* glsl */ `
   }
 
   // Head: extra, slightly delayed wobble from the spring (velocity term adds the lag).
-  if (part == 1.0 || part >= 6.0) {
-    if (part >= 6.0) {
-      // Pupils slide inside the eyeballs, driven by the same spring.
-      vec2 look = vec2(-sl.x * 0.22, -sl.y * 0.35 - sl.z * 0.08) - vl.xy * 0.012;
-      look += vec2(sin(t * 0.7 + side * 2.0), cos(t * 0.53 + side)) * 0.012;
-      float ll = length(look);
-      if (ll > 0.032) look *= 0.032 / ll;
-      p.xy += look;
-    }
+  if (part == 1.0) {
     vec2 hl = lean * 1.5 - vl.xz * 0.06 + vec2(sin(t * 1.7), sin(t * 2.3)) * 0.03 * uFloppy;
     vec3 q = p - uNeck;
-    q = rotZ(-hl.x * 1.3) * rotX(hl.y * 1.3) * q;
+    q = rotZ(-hl.x) * rotX(hl.y) * q;
     p = uNeck + q;
   }
 
@@ -268,17 +261,16 @@ const LIVE_BODY = /* glsl */ `
       vec3 jp = aPivot;
       p = jp + rotZ(side * 0.9 * fall) * (p - jp);
     }
-    if (part >= 6.0) p.y += 0.02 * fall;
     float dirSign = iState.w > 0.5 ? -1.0 : 1.0;
     // Horses fall on their side; people fall forward or backward.
     p = uFlopSide > 0.5 ? rotZ(ang * dirSign) * p : rotX(-ang * dirSign) * p;
-    p.y += (uFlopSide > 0.5 ? 0.35 : 0.22) * fall;
+    p.y += (uFlopSide > 0.5 ? 0.35 : 0.16) * fall;
   } else if (mode > 2.5 && mode < 3.5) {
     // Shader-only getting up: the reverse of the flop.
     float k = clamp(iState.w, 0.0, 1.0);
     float ang = 1.5708 * (1.0 - k * k * (3.0 - 2.0 * k));
     p = uFlopSide > 0.5 ? rotZ(ang) * p : rotX(-ang) * p;
-    p.y += 0.22 * (1.0 - k);
+    p.y += (uFlopSide > 0.5 ? 0.35 : 0.16) * (1.0 - k);
   }
 
   // Gear for the weapon that isn't drawn folds away into its joint.
@@ -308,7 +300,6 @@ const POSED_PARS = /* glsl */ `
 
 const POSED_BODY = /* glsl */ `
   int bp = int(aPart + 0.5);
-  if (bp >= 6) bp = 1;
   int row = int(iPose.x + 0.5);
   vec4 tp;
   vec4 tq;
@@ -320,7 +311,6 @@ const POSED_BODY = /* glsl */ `
     tq = texelFetch(uPoseCorpse, ivec2(bp * 2 + 1, row), 0);
   }
   vec3 local = position;
-  if (aPart > 5.5) local.y += 0.015;
   if (hiddenBySet(iPose.z)) local = aPivot;
   vec3 transformed = tp.xyz + quatRotate(tq, (local - uCenters[bp]) * uScale);
   transformed.y -= iPose.w;
@@ -370,7 +360,9 @@ function liveUniforms(layout: BodyLayout, look: LiveLook): Uniforms {
     uAttackStyle: { value: look.attackStyle },
     uAttackStyle2: { value: look.sidearmStyle },
     uFloppy: { value: look.floppy },
-    uWaddle: { value: look.horse ? 0.035 : 0.11 },
+    uWaddle: { value: look.horse ? 0.035 : 0.07 },
+    // Hip swing amplitude (rad): long human legs swing less than a galloping horse's.
+    uLegSwing: { value: look.horse ? 0.8 : 0.5 },
     uFlopSide: { value: look.horse ? 1 : 0 },
   };
 }
