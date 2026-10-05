@@ -31,7 +31,8 @@ import { HEADER_FLOATS, U_AUX, U_FLAGS, U_PROGRESS, U_STATE, U_VX, U_VY, U_VZ, U
 import { BlobShadows } from './blob-shadows.ts';
 import { POSE_TEXELS, type RagdollSystem, type UnitPoses } from './ragdolls.ts';
 import { createLiveMaterial, createPosedMaterial, unitTime } from './unit-material.ts';
-import { buildUnitModel, type UnitModel } from './unit-model.ts';
+import { getUnitModel } from './model-cache.ts';
+import type { UnitModel } from './unit-model.ts';
 
 /** Floats per live instance: posYaw, spring+scale, springVel+flash, anim, state. */
 const LIVE_FLOATS = 20;
@@ -187,7 +188,7 @@ export class UnitRenderer {
     for (let t = 0; t < defs.length; t++) {
       let n = 0;
       for (let i = 0; i < count; i++) if (types[i] === t) n++;
-      if (!this.models[t]) this.models[t] = buildUnitModel(defs[t]);
+      if (!this.models[t]) this.models[t] = getUnitModel(defs[t]);
       const model = this.models[t]!;
       layouts.push(model.layout);
       scales.push(defs[t].visual.scale);

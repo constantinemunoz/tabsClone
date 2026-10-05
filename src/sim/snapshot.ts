@@ -7,7 +7,11 @@ import type { Sim } from './sim.ts';
  * Float32Array, holding a header, per-unit render data, live projectiles and the tick's events.
  * Buffers ping-pong between worker and main thread, so the steady state allocates nothing.
  */
-export const HEADER_FLOATS = 16;
+/** Header size: 16 scalar fields, then damage dealt per team and unit type (2 x MAX_STAT_TYPES). */
+export const MAX_STAT_TYPES = 16;
+export const HEADER_FLOATS = 16 + 2 * MAX_STAT_TYPES;
+/** Damage dealt by team t's units of type k is at H_DAMAGE + t * MAX_STAT_TYPES + k. */
+export const H_DAMAGE = 16;
 export const H_TICK = 0;
 export const H_UNITS = 1;
 export const H_PROJECTILES = 2;
@@ -84,8 +88,10 @@ export function writeSnapshot(sim: Sim, out: Float32Array, tickMs: number, tickM
   out[H_EVENT_CAP] = ev.capacity;
   out[H_LAST_DEATH] = sim.lastDeath;
 
+  for (let k = H_DAMAGE; k < H_DAMAGE + 2 * MAX_STAT_TYPES; k++) out[k] = 0;
   let o = HEADER_FLOATS;
   for (let i = 0; i < w.count; i++, o += UNIT_STRIDE) {
+    if (w.type[i] < MAX_STAT_TYPES) out[H_DAMAGE + w.team[i] * MAX_STAT_TYPES + w.type[i]] += w.damageDealt[i];
     out[o + U_X] = w.px[i];
     out[o + U_Y] = w.py[i];
     out[o + U_Z] = w.pz[i];

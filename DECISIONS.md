@@ -104,3 +104,24 @@ Choices the brief did not settle, one or two lines each.
   slowly accelerating unit can't creep up a cliff a centimetre at a time.
 - **Shield emblem in team colour**: shields are the biggest thing in a phalanx, so a small team-
   coloured centre disc helps tell sides apart; the rest of the gear stays neutral.
+- **No campaign**: the user asked to skip the ten-level campaign. The menu has Sandbox, Open a
+  shared battle and Settings; the result screen has no Next Level button; there is no campaign
+  progress to save.
+- **Budget without a campaign**: the sandbox defaults to no budget (as the brief's sandbox), with
+  an optional per-side limit (300 to 2500). The counters always show what each side has spent.
+- **Share format**: version byte, map index, u32 seed, u16 count, then 3 bytes per unit
+  (type and team, x, z in whole metres), base64url without padding. Only URL-safe characters,
+  so it also survives hosts that pass nothing but plain #anchors. The dialog shows the code as
+  well as the link, because a page inside a host's frame can't know its outer URL; the menu can
+  open a pasted code.
+- **Seeds**: a battle started from an unchanged shared (or just-shared) placement uses that
+  seed, so it replays exactly; any edit gets a fresh random seed. Replay reuses the seed.
+- **Saving**: settings and the sandbox (map, budget, units) go to localStorage through the guarded
+  wrapper, saved 0.4 s after the last change.
+- **UI identity**: Greek pottery palette (parchment, black-figure ink, terracotta, bronze) with a
+  meander band on panels, one system typeface, 180 ms fades between screens. Unit cards show
+  portraits rendered from the real unit meshes at start-up, in the selected side's colours.
+- **Clicks reach the battlefield** unless they land on an actual control: the UI layer is
+  pointer-transparent except for panels, buttons and dialogs.
+- **Placement view**: placed units are drawn with the same wobble shader (idle sway) in their own
+  instanced batches, plus a pale ghost of the unit under the cursor when the spot is valid.

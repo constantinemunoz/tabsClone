@@ -56,9 +56,20 @@
   every map. An equal-cost round robin (2 seeds, both sides) has each unit winning 29-71% of
   match-ups.
 
+- **M5 Game loop** (the ten-level campaign was dropped at the user's request): main menu over a
+  live demo battle with an orbiting camera; sandbox placement on any map (bottom bar of unit
+  cards with rendered portraits, click to place, drag to paint a row, right-click to remove,
+  1 m grid, zones drawn on the ground, Blue/Red side tabs, optional per-side budget with
+  spent/left counters, unit cap, Mirror, Clear); battle HUD with strength bars and speed
+  controls; result screen (winner, time, units lost, survivors, top unit per side) with Replay,
+  Edit armies, Share and Menu; settings (quality tier) and the last sandbox setup saved in
+  local storage; share links and codes. Measured in the browser (headless Chromium): a full
+  click-and-drag placement, battle, result and share run with no console errors, and opening
+  the share link in a fresh browser reproduced the exact setup and seed.
+
 ## Next
-- M5 Game loop: menu, placement with a budget, ten campaign levels, sandbox, results, saving,
-  share links.
+- M6 Polish: particles, camera shake, hit-pause, final-kill slow motion, audio, lighting and UI
+  pass.
 
 ## Known issues
 - Units walk in straight lines, so on the mesas melee units drop into the canyon and stand at the

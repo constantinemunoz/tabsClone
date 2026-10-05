@@ -1,8 +1,7 @@
 import './ui/styles.css';
 import { GAME_TITLE } from './config.ts';
 import { App } from './game/app.ts';
-import { devSetupFromUrl } from './game/dev-battles.ts';
-import { createDevPanel, presetSetup } from './ui/dev-panel.ts';
+import { Game } from './game/game.ts';
 
 function hasWebGL2(): boolean {
   try {
@@ -41,13 +40,12 @@ if (!hasWebGL2()) {
   ]);
 } else {
   const app = new App(canvas, ui);
-  const mapId = new URLSearchParams(location.search).get('map') ?? 'meadow';
-  app.loadMap(mapId);
-  const setup = devSetupFromUrl(location.search) ?? presetSetup(0, mapId, 4242);
-  void app.startBattle(setup);
-  const panel = createDevPanel(ui, (s) => void app.startBattle(s), app.map.id);
-  app.onPhysicsState = (state) => panel.setPhysics(state);
+  app.loadMap('meadow');
+  const game = new Game(app, canvas, ui);
+  game.boot();
   app.start();
   app.loadPhysicsLater();
-  (window as unknown as { app: App }).app = app;
+  // Handy from the browser console while developing.
+  (window as unknown as { app: App; game: Game }).app = app;
+  (window as unknown as { app: App; game: Game }).game = game;
 }

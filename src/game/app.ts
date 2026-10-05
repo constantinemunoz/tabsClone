@@ -6,14 +6,14 @@ import { ProjectileRenderer } from '../render/projectiles.ts';
 import { loadRapier, RagdollSystem } from '../render/ragdolls.ts';
 import { GameScene } from '../render/scene.ts';
 import { UnitRenderer } from '../render/units.ts';
-import { RESULT_BLUE, RESULT_RED, RESULT_RUNNING } from '../sim/constants.ts';
+import { PlacementView } from '../render/placement-view.ts';
+import { ZoneOverlay } from '../render/zones.ts';
 import type { BattleSetup } from '../sim/sim.ts';
 import {
   H_ALIVE_BLUE,
   H_ALIVE_RED,
   H_BUFFERS_ALLOCATED,
   H_PROJECTILES,
-  H_RESULT,
   H_TICK,
   H_TICK_MS,
   H_TICK_MS_MAX,
@@ -22,15 +22,16 @@ import { createTerrain, type Terrain } from '../sim/terrain.ts';
 import { DevOverlay } from '../ui/dev-overlay.ts';
 import { SimClient } from './sim-client.ts';
 
-/** Battle speeds selectable with the number keys (index 0 is pause). */
+/** Battle speeds: pause, 0.25x, 1x, 2x. */
 export const SPEEDS = [0, 0.25, 1, 2];
 
 /** Most units a battle can hold on any tier; sizes the shadow pool. */
 const MAX_UNITS = 1200;
 
 /**
- * Top-level glue: owns the scene, camera, overlay, the simulation client, the unit renderer and
- * the frame loop. Pauses everything while the tab is hidden.
+ * The engine host: owns the scene, camera, overlay, the simulation client, the renderers and
+ * the frame loop. It knows nothing about menus; the game controller (game.ts) drives it.
+ * Pauses everything while the tab is hidden.
  */
 export class App {
   readonly scene: GameScene;
@@ -40,14 +41,21 @@ export class App {
   readonly ragdolls: RagdollSystem;
   readonly units: UnitRenderer;
   readonly projectiles: ProjectileRenderer;
+  readonly placementView: PlacementView;
+  readonly zones: ZoneOverlay;
   quality: QualitySettings;
+  /** Tier picked automatically for this machine (used when settings say "auto"). */
+  readonly detectedTier: QualitySettings['tier'];
   map!: MapDef;
   terrain!: Terrain;
   setup: BattleSetup | null = null;
   speed = 1;
   private pausedSpeed = 1;
-  private banner: HTMLDivElement;
   private rapierLoading = false;
+  /** True while a battle is loaded (its units are drawn and the sim is stepping). */
+  battleActive = false;
+  /** Called every frame before rendering, with real and battle-speed-scaled dt. */
+  onFrame: ((dt: number, battleDt: number) => void) | null = null;
   /** Called when the ragdoll physics engine finishes loading or fails to load. */
   onPhysicsState: ((state: 'loading' | 'ready' | 'failed') => void) | null = null;
 
@@ -57,7 +65,8 @@ export class App {
 
   constructor(canvas: HTMLCanvasElement, ui: HTMLElement) {
     const probe = canvas.getContext('webgl2');
-    this.quality = QUALITY_PRESETS[detectQualityTier(probe)];
+    this.detectedTier = detectQualityTier(probe);
+    this.quality = QUALITY_PRESETS[this.detectedTier];
     this.scene = new GameScene(canvas, this.quality);
     this.cam = new CameraController(this.scene.camera, canvas);
     this.overlay = new DevOverlay(ui);
@@ -70,16 +79,21 @@ export class App {
       this.projectiles.onEvents(ev, offset, count);
     };
     this.sim.snapshotSink = this.units.onSnapshot;
-    this.banner = document.createElement('div');
-    this.banner.className = 'dev-banner';
-    this.banner.hidden = true;
-    ui.appendChild(this.banner);
+    this.placementView = new PlacementView(this.scene.scene, UNITS, MAX_UNITS);
+    this.zones = new ZoneOverlay(this.scene.scene);
     window.addEventListener('resize', () => this.scene.resize());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.stop();
       else this.start();
     });
-    window.addEventListener('keydown', this.onKey);
+  }
+
+  /** Switch quality tier live: shadows, resolution, ragdoll budget. */
+  setQuality(q: QualitySettings): void {
+    this.quality = q;
+    this.scene.applyQuality(q);
+    this.ragdolls.setBudget(q.ragdollBudget);
+    this.overlay.stats.tier = q.tier;
   }
 
   /** Load the ragdoll physics engine in the background, after the first frames are on screen. */
@@ -105,19 +119,6 @@ export class App {
     setTimeout(go, 300);
   }
 
-  private onKey = (e: KeyboardEvent): void => {
-    if (e.repeat) return;
-    const a = document.activeElement;
-    if (a && (a.tagName === 'INPUT' || a.tagName === 'SELECT')) return;
-    if (e.code === 'Space') {
-      e.preventDefault();
-      this.togglePause();
-    } else if (e.code === 'Digit1') this.speed = SPEEDS[1];
-    else if (e.code === 'Digit2') this.speed = SPEEDS[2];
-    else if (e.code === 'Digit3') this.speed = SPEEDS[3];
-    else if (e.code === 'KeyR' && this.setup) void this.startBattle(this.setup);
-  };
-
   togglePause(): void {
     if (this.speed > 0) {
       this.pausedSpeed = this.speed;
@@ -127,13 +128,20 @@ export class App {
     }
   }
 
+  get paused(): boolean {
+    return this.speed === 0;
+  }
+
   loadMap(id: string): void {
+    if (this.map && this.map.id === getMap(id).id) return;
     this.map = getMap(id);
     this.terrain = createTerrain(this.map);
     this.scene.setMap(this.map, this.terrain);
     this.cam.setTerrain(this.terrain, this.map.play);
     this.cam.setView(0, 0, Math.PI * 0.5 + 0.35, 0.62, 85);
     this.units.setTerrain(this.terrain);
+    this.placementView.setTerrain(this.terrain);
+    this.zones.build(this.map, this.terrain);
     if (this.scene.terrainData) {
       this.ragdolls.setTerrain(this.scene.terrainData.physicsVertices, this.scene.terrainData.physicsIndices, this.terrain.killY);
     }
@@ -155,10 +163,21 @@ export class App {
     }
     this.units.build(UNITS, types, teams, n);
     this.projectiles.clear();
-    this.banner.hidden = true;
     this.overlay.stats.units = n;
     if (this.speed === 0) this.speed = this.pausedSpeed || 1;
+    this.battleActive = true;
     await this.sim.start(setup, n);
+  }
+
+  /** Tear down the running battle (its units, ragdolls, projectiles and worker). */
+  stopBattle(): void {
+    this.battleActive = false;
+    this.sim.dispose();
+    this.units.dispose();
+    this.projectiles.clear();
+    this.ragdolls.setBattle(0, new Uint8Array(0), new Uint8Array(0), [], []);
+    this.units.shadows.begin();
+    this.units.shadows.end();
   }
 
   start(): void {
@@ -182,8 +201,9 @@ export class App {
     const dt = Math.min(frameMs, 100) / 1000;
 
     this.cam.update(dt);
+    this.onFrame?.(dt, dt * this.speed);
     const sim = this.sim;
-    if (sim.ready && sim.curr) {
+    if (this.battleActive && sim.ready && sim.curr) {
       const alpha = sim.alpha();
       const u0 = performance.now();
       this.units.update(sim, alpha, dt * this.speed);
@@ -198,16 +218,11 @@ export class App {
       s.simTick = c[H_TICK];
       s.snapshotBuffers = c[H_BUFFERS_ALLOCATED];
       s.ragdolls = this.units.activeRagdolls;
-      const result = c[H_RESULT];
-      if (result !== RESULT_RUNNING && this.banner.hidden) {
-        this.banner.hidden = false;
-        this.banner.textContent = result === RESULT_BLUE ? 'Blue wins' : result === RESULT_RED ? 'Red wins' : 'Draw';
-      }
     }
     const r0 = performance.now();
     this.scene.render();
     this.overlay.stats.renderMs = performance.now() - r0;
-    sim.advance(dt, this.speed);
+    if (this.battleActive) sim.advance(dt, this.speed);
 
     const info = this.scene.renderer.info.render;
     this.overlay.stats.drawCalls = info.calls;
