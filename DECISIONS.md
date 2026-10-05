@@ -97,7 +97,7 @@ Choices the brief did not settle, one or two lines each.
   gallop; the horse falls on its side in the shader-only death flop.
 - **Ranged reach and height**: effective range grows by 0.8 m per metre the shooter stands above
   the target (up to +40%) and shrinks when shooting uphill (down to -30%).
-- **Balance method**: equal-cost round robin in Node (`pure` armies of one type, 450 cost a side,
+- **Balance method**: equal-cost round robin in Node (single-type armies, 450 cost a side,
   two seeds, both sides). Tuned costs until every unit wins some match-ups: Hoplite 45,
   Spartan 70, Peltast 32, Skirmisher 16, Archer 36, Slinger 36, Horseman 50, Marine 46.
 - **Slope rule**: walkability is judged over a fixed 0.4 m probe ahead, not the tick's step, so a
