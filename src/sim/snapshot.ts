@@ -26,7 +26,10 @@ export const H_TICK_MS_MAX = 14;
 /** Snapshot buffers the worker has ever allocated (should stop growing after the first ticks). */
 export const H_BUFFERS_ALLOCATED = 15;
 
-/** Per unit: x, y, z, yaw, vx, vy, vz, healthFraction, state, stateProgress, flags, runup. */
+/**
+ * Per unit: x, y, z, yaw, vx, vy, vz, healthFraction, state, stateProgress, flags, aux.
+ * aux is the shield-wall neighbour count for shield-wall units and the charge run-up otherwise.
+ */
 export const UNIT_STRIDE = 12;
 export const U_X = 0;
 export const U_Y = 1;
@@ -39,7 +42,7 @@ export const U_HEALTH = 7;
 export const U_STATE = 8;
 export const U_PROGRESS = 9;
 export const U_FLAGS = 10;
-export const U_RUNUP = 11;
+export const U_AUX = 11;
 
 /** Per projectile: x, y, z, vx, vy, vz, visual kind, slot. */
 export const PROJ_STRIDE = 8;
@@ -95,7 +98,7 @@ export function writeSnapshot(sim: Sim, out: Float32Array, tickMs: number, tickM
     const len = w.stateLength[i];
     out[o + U_PROGRESS] = len > 0 ? 1 - w.stateTimer[i] / len : 0;
     out[o + U_FLAGS] = w.flags[i];
-    out[o + U_RUNUP] = w.runup[i];
+    out[o + U_AUX] = sim.defs[w.type[i]].shieldWall ? w.wallCount[i] : w.runup[i];
   }
 
   o = projectilesOffset(unitCap);

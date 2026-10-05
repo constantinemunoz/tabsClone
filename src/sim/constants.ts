@@ -47,6 +47,8 @@ export const F_AIRBORNE = 1;
 export const F_FELL = 2;
 export const F_FLYING = 4;
 export const F_CHARGED = 8;
+/** The unit currently has its sidearm out (drawn weapon, for visuals and weapon choice). */
+export const F_SIDEARM = 16;
 
 // Event types written to the per-tick event buffer.
 export const EV_HIT = 1;
@@ -57,6 +59,11 @@ export const EV_PROJ_SPAWN = 5;
 export const EV_PROJ_IMPACT = 6;
 /** A unit swung or fired (used for swish sounds and the body lurch). */
 export const EV_STRIKE = 7;
+
+/** Projectile impact kinds (the magnitude field of EV_PROJ_IMPACT). */
+export const IMPACT_TERRAIN = 0;
+export const IMPACT_UNIT = 1;
+export const IMPACT_EXPIRED = 2;
 
 // Battle results.
 export const RESULT_RUNNING = -1;

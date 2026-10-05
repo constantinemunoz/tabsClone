@@ -37,10 +37,35 @@
   the unit update (springs, interpolation, instance writes) measured 0.25 ms mean before any
   ragdolls were active; browser numbers here run on SwiftShader with a contended CPU.
 
+- **M4 Full 3D combat**, with the roster replaced at the user's request by eight ancient Greek
+  units: Hoplite, Spartan, Peltast, Skirmisher, Archer, Slinger, Horseman and Marine.
+  Projectiles are pooled typed arrays launched on ballistic arcs (leading the target, seeded
+  spread) with swept-segment hits against terrain and unit capsules; area damage with falloff
+  and per-weapon friendly fire is in the engine. Units can carry a sidearm (used when out of
+  ammo, when an enemy is inside its reach, or for a Spartan when too close for the spear),
+  ammunition per unit (Peltasts 2-3 javelins, Marines 1-2), armour classes, a shield wall for
+  Hoplites (less damage and knockback per Hoplite standing beside them, shields visibly raised),
+  slinger bullets that do 2.4x against heavy armour, a Horseman charge (4.5x damage, big launch)
+  with flank damage and a flanking path, and height-aware ranged reach. Flying units still work
+  in the engine (tested with a made-up flyer); no current unit flies. A cliff-creep bug was found
+  and fixed (slope is now measured over a fixed probe distance). New procedural kit: Corinthian
+  helmets, aspis shields with team emblems, javelins, bows, slings, a horse and rider. Projectiles
+  render instanced per kind; arrows and javelins stick in the ground for a while.
+  Measured: `npm run bench` 150 v 150 meadow, busy-stretch tick mean 0.38 ms, p99 1.30 ms; sky
+  island mean 0.43 ms, p99 2.12 ms. Tests: 41 pass, including every unit type dealing damage on
+  every map. An equal-cost round robin (2 seeds, both sides) has each unit winning 29-71% of
+  match-ups.
+
 ## Next
-- Waiting for the play-test of M3 before M4 (projectiles, flyers, all ten units, all maps).
+- M5 Game loop: menu, placement with a budget, ten campaign levels, sandbox, results, saving,
+  share links.
 
 ## Known issues
+- Units walk in straight lines, so on the mesas melee units drop into the canyon and stand at the
+  foot of the far cliff instead of using the ramps. A flow field (the brief's planned upgrade
+  for `desiredDirection`) would fix this.
+- Mirror battles have so far favoured blue slightly (20-12 over 32 battles); not conclusive,
+  to re-check with a larger sample in M7.
 - Weapons clip through bodies (no visual collision); the spear especially.
 - After a shader-only tumble (ragdoll budget spent), the get-up starts from a lying pose, so the
   landing pose pops. Ragdoll tumbles blend properly.

@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   CapsuleGeometry,
@@ -10,20 +11,20 @@ import {
   Matrix4,
   Quaternion,
   SphereGeometry,
-  Vector3,
-  BoxGeometry,
   TorusGeometry,
+  Vector3,
 } from 'three';
-import type { HatKind, UnitDef, WeaponMesh } from '../data/units.ts';
+import type { GearKind, HatKind, UnitDef } from '../data/units.ts';
 
 /**
  * Procedural unit bodies: a rounded torso, a round head, stubby arms and legs, googly eyes,
- * plus a hat and a weapon per type. Every vertex is tagged with:
+ * plus a hat and gear per type, and optionally a horse underneath. Every vertex is tagged with:
  *   aPart  - which body part it moves with (see PART_*)
  *   aPivot - the joint that part rotates about (hip, shoulder, neck...)
- *   aTint  - how much of the team colour it takes (body 1, skin a little, gear 0)
- * The model is built at a canonical size (about 1.6 m tall, feet at y = 0, facing +z) and
- * scaled per unit type in the shader.
+ *   aTint  - how much of the team colour it takes (clothes 1, gear 0)
+ *   aSet   - weapon set: always shown, main weapon only, or sidearm only
+ * The model is built at a canonical size (a 1.6 m person, feet at y = 0, facing +z, the unit's
+ * left toward +x) and scaled per unit type in the shader.
  */
 export const PART_TORSO = 0;
 export const PART_HEAD = 1;
@@ -37,22 +38,20 @@ export const PART_PUPIL_R = 7;
 /** The six rigid parts a ragdoll is made of, indexed like PART_TORSO..PART_LEG_R. */
 export const RAGDOLL_PARTS = 6;
 
-/** Attack animation styles understood by the wobble shader. */
-export const ATTACK_SWING = 0;
-export const ATTACK_THRUST = 1;
-export const ATTACK_SWEEP = 2;
-export const ATTACK_LUNGE = 3;
-export const ATTACK_THROW = 4;
-export const ATTACK_BLAST = 5;
+/** Weapon sets (aSet): shown always, only while the main weapon is out, or only with the sidearm. */
+export const SET_ALWAYS = 0;
+export const SET_MAIN = 1;
+export const SET_SIDEARM = 2;
 
-/** Shape of each ragdoll body: capsule (halfHeight > 0) or ball, in canonical units. */
+/** Shape of each ragdoll body: box (half set), capsule (halfHeight > 0) or ball, canonical units. */
 export interface RagdollPartShape {
   center: Vector3;
   radius: number;
   halfHeight: number;
+  half?: Vector3;
 }
 
-/** Where the ragdoll joints are, in canonical units. */
+/** Where the joints are, in canonical units. For a horse, hipL/hipR are its front and back legs. */
 export interface BodyLayout {
   height: number;
   neck: Vector3;
@@ -67,21 +66,28 @@ export interface BodyLayout {
 export interface UnitModel {
   geometry: BufferGeometry;
   layout: BodyLayout;
-  attackStyle: number;
+  horse: boolean;
 }
 
 const SKIN = 0xffdcbc;
-const SHOE = 0x3b3442;
+const HAIR = 0x4a3426;
+const SANDAL = 0x6b4a32;
 const EYE_WHITE = 0xffffff;
 const PUPIL = 0x15151c;
 const WOOD = 0x9a6a3f;
 const DARK_WOOD = 0x6b4527;
-const METAL = 0xb9c0c9;
-const DARK_METAL = 0x6f7782;
-const CLOTH = 0x4a4550;
-const GOLD = 0xf2c14e;
-const BONE = 0xf3ead8;
+const BRONZE = 0xc8913f;
+const DARK_BRONZE = 0x8f6227;
+const STEEL = 0xc3c9d1;
 const LEATHER = 0x8a5a36;
+const LINEN = 0xe6dcc4;
+const HORSEHAIR = 0x3a2b26;
+const CREAM_CREST = 0xeee2c4;
+const STONE = 0x8e8a80;
+const LEAD = 0x5b5f66;
+const HORSE = 0x8a5a3b;
+const MANE = 0x3a2a20;
+const HOOF = 0x2c2622;
 
 /**
  * Accumulates primitives into one indexed geometry. Primitives stay indexed so the vertex
@@ -94,11 +100,12 @@ class Builder {
   private part: number[] = [];
   private pivot: number[] = [];
   private tint: number[] = [];
+  private set: number[] = [];
   private index: number[] = [];
   private readonly c = new Color();
   private readonly v = new Vector3();
 
-  add(geo: BufferGeometry, part: number, pivot: Vector3, color: number, tint: number, m?: Matrix4, shade = 1): void {
+  add(geo: BufferGeometry, part: number, pivot: Vector3, color: number, tint: number, m?: Matrix4, shade = 1, set = SET_ALWAYS): void {
     const p = geo.getAttribute('position');
     const base = this.pos.length / 3;
     this.c.setHex(color).multiplyScalar(shade);
@@ -110,8 +117,9 @@ class Builder {
       this.part.push(part);
       this.pivot.push(pivot.x, pivot.y, pivot.z);
       this.tint.push(tint);
+      this.set.push(set);
     }
-    // A mirroring matrix would flip the winding; none of ours mirror.
+    // None of our placement matrices mirror, so the winding stays front-facing.
     if (geo.index) {
       const idx = geo.index;
       for (let k = 0; k < idx.count; k++) this.index.push(base + idx.getX(k));
@@ -128,6 +136,7 @@ class Builder {
     g.setAttribute('aPart', new BufferAttribute(new Float32Array(this.part), 1));
     g.setAttribute('aPivot', new BufferAttribute(new Float32Array(this.pivot), 3));
     g.setAttribute('aTint', new BufferAttribute(new Float32Array(this.tint), 1));
+    g.setAttribute('aSet', new BufferAttribute(new Float32Array(this.set), 1));
     const n = this.pos.length / 3;
     g.setIndex(new BufferAttribute(n > 65535 ? new Uint32Array(this.index) : new Uint16Array(this.index), 1));
     g.computeBoundingSphere();
@@ -143,14 +152,14 @@ function mat(x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy
   );
 }
 
-/** Matrix placing a +y-aligned primitive centred at the origin along the segment a-b (no scaling). */
+/** Matrix placing a +y-aligned primitive centred on the segment a-b (no scaling). */
 function along(a: Vector3, b: Vector3): Matrix4 {
   const dir = new Vector3().subVectors(b, a).normalize();
   const q = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), dir);
   return new Matrix4().compose(new Vector3().addVectors(a, b).multiplyScalar(0.5), q, new Vector3(1, 1, 1));
 }
 
-/** Matrix placing a +y-aligned primitive so it runs from a to b. */
+/** Matrix stretching a unit-height +y primitive so it runs from a to b. */
 function between(a: Vector3, b: Vector3): Matrix4 {
   const dir = new Vector3().subVectors(b, a);
   const len = dir.length();
@@ -158,174 +167,70 @@ function between(a: Vector3, b: Vector3): Matrix4 {
   return new Matrix4().compose(new Vector3().addVectors(a, b).multiplyScalar(0.5), q, new Vector3(1, len, 1));
 }
 
-function addHat(b: Builder, hat: HatKind, head: Vector3, hr: number, neck: Vector3): void {
-  const P = PART_HEAD;
-  switch (hat) {
-    case 'bandana':
-      b.add(new CylinderGeometry(hr * 1.03, hr * 1.05, hr * 0.32, 10, 1, true), P, neck, 0xc0392b, 0, mat(head.x, head.y + hr * 0.3, head.z));
-      b.add(new IcosahedronGeometry(hr * 0.22, 0), P, neck, 0xc0392b, 0, mat(head.x, head.y + hr * 0.3, head.z - hr * 1.05));
-      b.add(new ConeGeometry(hr * 0.16, hr * 0.5, 4), P, neck, 0xc0392b, 0, mat(head.x + hr * 0.12, head.y + hr * 0.1, head.z - hr * 1.15, 2.2, 0, 0.4));
-      break;
-    case 'helmet':
-      b.add(new SphereGeometry(hr * 1.1, 8, 4, 0, Math.PI * 2, 0, Math.PI * 0.55), P, neck, METAL, 0, mat(head.x, head.y + hr * 0.08, head.z));
-      b.add(new BoxGeometry(hr * 0.14, hr * 0.55, hr * 0.12), P, neck, DARK_METAL, 0, mat(head.x, head.y + hr * 0.05, head.z + hr * 1.05));
-      b.add(new ConeGeometry(hr * 0.14, hr * 0.5, 5), P, neck, 0xd9473b, 0, mat(head.x, head.y + hr * 1.25, head.z));
-      break;
-    case 'cap':
-      b.add(new SphereGeometry(hr * 1.06, 8, 3, 0, Math.PI * 2, 0, Math.PI * 0.45), P, neck, LEATHER, 0, mat(head.x, head.y + hr * 0.12, head.z));
-      b.add(new CylinderGeometry(hr * 0.75, hr * 0.75, hr * 0.06, 10, 1, false, -Math.PI / 2, Math.PI), P, neck, DARK_WOOD, 0, mat(head.x, head.y + hr * 0.42, head.z + hr * 0.55));
-      break;
-    case 'horns':
-      b.add(new SphereGeometry(hr * 1.1, 8, 4, 0, Math.PI * 2, 0, Math.PI * 0.55), P, neck, DARK_METAL, 0, mat(head.x, head.y + hr * 0.06, head.z));
-      b.add(new ConeGeometry(hr * 0.2, hr * 0.95, 6), P, neck, BONE, 0, mat(head.x + hr * 1.0, head.y + hr * 0.75, head.z + hr * 0.1, 0, 0, -0.9));
-      b.add(new ConeGeometry(hr * 0.2, hr * 0.95, 6), P, neck, BONE, 0, mat(head.x - hr * 1.0, head.y + hr * 0.75, head.z + hr * 0.1, 0, 0, 0.9));
-      break;
-    case 'crown': {
-      b.add(new CylinderGeometry(hr * 0.8, hr * 0.85, hr * 0.32, 8, 1, true), P, neck, GOLD, 0, mat(head.x, head.y + hr * 1.0, head.z));
-      for (let k = 0; k < 5; k++) {
-        const a = (k / 5) * Math.PI * 2;
-        b.add(new ConeGeometry(hr * 0.13, hr * 0.32, 4), P, neck, GOLD, 0, mat(head.x + Math.sin(a) * hr * 0.75, head.y + hr * 1.3, head.z + Math.cos(a) * hr * 0.75));
-      }
-      break;
-    }
-    case 'propeller':
-      b.add(new SphereGeometry(hr * 1.05, 8, 3, 0, Math.PI * 2, 0, Math.PI * 0.45), P, neck, 0x3d9fd6, 0, mat(head.x, head.y + hr * 0.12, head.z));
-      b.add(new CylinderGeometry(hr * 0.05, hr * 0.05, hr * 0.35, 4), P, neck, DARK_METAL, 0, mat(head.x, head.y + hr * 1.2, head.z));
-      b.add(new BoxGeometry(hr * 1.6, hr * 0.03, hr * 0.18), P, neck, 0xf2c14e, 0, mat(head.x, head.y + hr * 1.38, head.z));
-      break;
-    case 'hood':
-      b.add(new SphereGeometry(hr * 1.12, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.62), P, neck, 0x4f6b3a, 0, mat(head.x, head.y + hr * 0.05, head.z - hr * 0.08, -0.35));
-      break;
-    case 'goggles':
-      b.add(new TorusGeometry(hr * 0.2, hr * 0.06, 4, 8), P, neck, DARK_METAL, 0, mat(head.x + hr * 0.38, head.y + hr * 0.55, head.z + hr * 0.8, -0.5));
-      b.add(new TorusGeometry(hr * 0.2, hr * 0.06, 4, 8), P, neck, DARK_METAL, 0, mat(head.x - hr * 0.38, head.y + hr * 0.55, head.z + hr * 0.8, -0.5));
-      b.add(new CylinderGeometry(hr * 1.02, hr * 1.02, hr * 0.12, 10, 1, true), P, neck, LEATHER, 0, mat(head.x, head.y + hr * 0.55, head.z));
-      break;
-    case 'none':
-      break;
-  }
+/** A cone tip placed at `tip`, pointing away from `from`. */
+function tipAt(from: Vector3, tip: Vector3, r: number, len: number): Matrix4 {
+  const dir = new Vector3().subVectors(tip, from).normalize();
+  const q = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), dir);
+  return new Matrix4().compose(tip.clone().addScaledVector(dir, len * 0.5), q, new Vector3(r, len, r));
 }
 
-/** Weapon (and off-hand gear) in the rest pose, attached to the arms. Returns the attack style. */
-function addWeapon(b: Builder, w: WeaponMesh, handR: Vector3, handL: Vector3, shoulderR: Vector3, shoulderL: Vector3): number {
-  const R = PART_ARM_R;
-  const L = PART_ARM_L;
-  switch (w) {
-    case 'club': {
-      const tip = new Vector3(handR.x, handR.y + 0.32, handR.z + 0.42);
-      b.add(new CylinderGeometry(0.075, 0.035, 1, 6), R, shoulderR, WOOD, 0, between(handR.clone().add(new Vector3(0, -0.04, -0.05)), tip));
-      b.add(new IcosahedronGeometry(0.06, 0), R, shoulderR, DARK_WOOD, 0, mat(tip.x + 0.02, tip.y - 0.06, tip.z - 0.06));
-      return ATTACK_SWING;
-    }
-    case 'swordShield': {
-      const tip = new Vector3(handR.x, handR.y + 0.3, handR.z + 0.5);
-      b.add(new BoxGeometry(0.06, 1, 0.025), R, shoulderR, METAL, 0, between(handR.clone().add(new Vector3(0, 0.03, 0.04)), tip));
-      b.add(new BoxGeometry(0.2, 0.04, 0.05), R, shoulderR, DARK_METAL, 0, mat(handR.x, handR.y + 0.04, handR.z + 0.06, -0.86));
-      // Shield on the left forearm, facing forward.
-      b.add(new CylinderGeometry(0.3, 0.3, 0.06, 9), L, shoulderL, WOOD, 0, mat(handL.x + 0.02, handL.y + 0.16, handL.z + 0.17, Math.PI / 2));
-      b.add(new TorusGeometry(0.29, 0.03, 3, 10), L, shoulderL, DARK_METAL, 0, mat(handL.x + 0.02, handL.y + 0.16, handL.z + 0.2));
-      b.add(new SphereGeometry(0.07, 6, 4), L, shoulderL, METAL, 0, mat(handL.x + 0.02, handL.y + 0.16, handL.z + 0.22));
-      return ATTACK_SWING;
-    }
-    case 'spear': {
-      const back = new Vector3(handR.x, handR.y + 0.02, handR.z - 0.55);
-      const front = new Vector3(handR.x, handR.y + 0.12, handR.z + 1.55);
-      b.add(new CylinderGeometry(0.03, 0.03, 1, 5), R, shoulderR, WOOD, 0, between(back, front));
-      b.add(new ConeGeometry(0.07, 0.3, 5), R, shoulderR, METAL, 0, mat(front.x, front.y + 0.01, front.z + 0.12, Math.PI / 2 - 0.05));
-      return ATTACK_THRUST;
-    }
-    case 'ram':
-      // Big padded gauntlets; the charger attacks with its whole body.
-      b.add(new IcosahedronGeometry(0.13, 0), R, shoulderR, DARK_METAL, 0, mat(handR.x, handR.y, handR.z));
-      b.add(new IcosahedronGeometry(0.13, 0), L, shoulderL, DARK_METAL, 0, mat(handL.x, handL.y, handL.z));
-      b.add(new SphereGeometry(0.14, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2), R, shoulderR, METAL, 0, mat(shoulderR.x, shoulderR.y + 0.02, shoulderR.z, 0, 0, 0.5));
-      b.add(new SphereGeometry(0.14, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2), L, shoulderL, METAL, 0, mat(shoulderL.x, shoulderL.y + 0.02, shoulderL.z, 0, 0, -0.5));
-      return ATTACK_LUNGE;
-    case 'log': {
-      const tip = new Vector3(handR.x - 0.05, handR.y + 0.45, handR.z + 0.62);
-      b.add(new CylinderGeometry(0.15, 0.08, 1, 7), R, shoulderR, DARK_WOOD, 0, between(handR.clone().add(new Vector3(0, -0.06, -0.08)), tip));
-      b.add(new ConeGeometry(0.05, 0.22, 4), R, shoulderR, DARK_WOOD, 0, mat(tip.x + 0.1, tip.y - 0.25, tip.z - 0.2, 0.6, 0, -0.9));
-      b.add(new IcosahedronGeometry(0.12, 0), R, shoulderR, 0x5e8a3c, 0, mat(tip.x + 0.16, tip.y - 0.3, tip.z - 0.26));
-      return ATTACK_SWEEP;
-    }
-    case 'bow': {
-      // Bow held upright in the left hand; right hand draws.
-      b.add(new TorusGeometry(0.42, 0.025, 4, 10, Math.PI * 0.9), L, shoulderL, WOOD, 0, mat(handL.x + 0.02, handL.y + 0.1, handL.z + 0.14, 0, Math.PI / 2, Math.PI / 2 + Math.PI * 0.05));
-      b.add(new CylinderGeometry(0.005, 0.005, 0.82, 3), L, shoulderL, 0xeeeeee, 0, mat(handL.x + 0.02, handL.y + 0.1, handL.z + 0.0));
-      return ATTACK_THROW;
-    }
-    case 'bomb': {
-      b.add(new IcosahedronGeometry(0.14, 1), R, shoulderR, 0x2b2b33, 0, mat(handR.x, handR.y + 0.06, handR.z + 0.08));
-      b.add(new CylinderGeometry(0.015, 0.015, 0.12, 3), R, shoulderR, 0xd9b24a, 0, mat(handR.x, handR.y + 0.24, handR.z + 0.08, 0.3));
-      return ATTACK_THROW;
-    }
-    case 'bellows': {
-      const c = new Vector3((handR.x + handL.x) / 2, handR.y + 0.1, handR.z + 0.32);
-      b.add(new BoxGeometry(0.42, 0.2, 0.34), R, shoulderR, LEATHER, 0, mat(c.x, c.y, c.z));
-      b.add(new ConeGeometry(0.07, 0.38, 6), R, shoulderR, METAL, 0, mat(c.x, c.y, c.z + 0.34, Math.PI / 2));
-      b.add(new BoxGeometry(0.44, 0.04, 0.36), R, shoulderR, WOOD, 0, mat(c.x, c.y + 0.12, c.z));
-      return ATTACK_BLAST;
-    }
-    case 'darts': {
-      b.add(new ConeGeometry(0.03, 0.3, 4), R, shoulderR, METAL, 0, mat(handR.x, handR.y + 0.1, handR.z + 0.1, Math.PI / 2));
-      return ATTACK_THROW;
-    }
-    case 'catapult': {
-      // A small wheeled catapult the unit pushes; the arm of the catapult moves with the right arm.
-      b.add(new BoxGeometry(0.7, 0.14, 1.0), PART_TORSO, new Vector3(), DARK_WOOD, 0, mat(0, 0.32, 0.75));
-      for (const sx of [-0.38, 0.38]) {
-        for (const sz of [0.38, 1.12]) {
-          b.add(new CylinderGeometry(0.16, 0.16, 0.08, 8), PART_TORSO, new Vector3(), WOOD, 0, mat(sx, 0.18, sz, 0, 0, Math.PI / 2));
-        }
-      }
-      const pivot = new Vector3(0, 0.45, 0.85);
-      b.add(new BoxGeometry(0.08, 0.08, 0.95), R, shoulderR, WOOD, 0, mat(0, 0.5, 0.52, -0.25));
-      b.add(new CylinderGeometry(0.16, 0.12, 0.1, 8), R, shoulderR, DARK_WOOD, 0, mat(0, 0.62, 0.08));
-      b.add(new BoxGeometry(0.5, 0.36, 0.08), PART_TORSO, pivot, DARK_WOOD, 0, mat(0, 0.6, 0.98));
-      return ATTACK_THROW;
-    }
-  }
-  return ATTACK_SWING;
+const v3 = (x: number, y: number, z: number) => new Vector3(x, y, z);
+
+/** Joints and landmarks of a person, as built. */
+interface Person {
+  neck: Vector3;
+  hip: Vector3;
+  headC: Vector3;
+  headR: number;
+  torsoC: Vector3;
+  torsoR: Vector3;
+  shoulderL: Vector3;
+  shoulderR: Vector3;
+  handL: Vector3;
+  handR: Vector3;
+  hipL: Vector3;
+  hipR: Vector3;
 }
 
-/** Build the merged mesh for one unit type. */
-export function buildUnitModel(def: UnitDef): UnitModel {
+/**
+ * The person: torso, head with googly eyes, arms, and (unless seated on a horse) legs.
+ * `base` lifts the whole person (a rider sits on the saddle).
+ */
+function addPerson(b: Builder, def: UnitDef, base: Vector3, seated: boolean): Person {
   const v = def.visual;
-  const b = new Builder();
   const belly = v.belly;
   const headS = v.headSize;
   const limb = v.limbThickness;
+  const o = (x: number, y: number, z: number) => v3(x + base.x, y + base.y, z + base.z);
 
-  // Joints and part placement (canonical units, feet at 0, facing +z, unit's left is +x).
   const hipY = 0.48;
   const hipX = 0.12 * Math.max(0.9, belly);
-  const torsoC = new Vector3(0, 0.79, 0);
-  const torsoR = new Vector3(0.27 * belly, 0.33, 0.24 * belly);
-  const neck = new Vector3(0, 1.08, 0);
+  const torsoC = o(0, 0.79, 0);
+  const torsoR = v3(0.27 * belly, 0.33, 0.24 * belly);
+  const neck = o(0, 1.08, 0);
   const headR = 0.25 * headS;
-  const headC = new Vector3(0, 1.08 + headR * 0.92, 0.01);
+  const headC = o(0, 1.08 + headR * 0.92, 0.01);
   const shX = torsoR.x * 0.86 + 0.04;
-  const shoulderL = new Vector3(shX, 0.99, 0);
-  const shoulderR = new Vector3(-shX, 0.99, 0);
-  const armLen = 0.32;
-  const handL = new Vector3(shX + 0.05, 0.99 - armLen - 0.07, 0.03);
-  const handR = new Vector3(-shX - 0.05, 0.99 - armLen - 0.07, 0.03);
-  const hipL = new Vector3(hipX, hipY, 0);
-  const hipR = new Vector3(-hipX, hipY, 0);
-  const hip = new Vector3(0, hipY, 0);
+  const shoulderL = o(shX, 0.99, 0);
+  const shoulderR = o(-shX, 0.99, 0);
+  const handL = o(shX + 0.05, 0.6, 0.03);
+  const handR = o(-shX - 0.05, 0.6, 0.03);
+  const hipL = o(hipX, hipY, 0);
+  const hipR = o(-hipX, hipY, 0);
+  const hip = o(0, hipY, 0);
 
-  // Torso: a squashed, slightly pear-shaped ball; a belt for a bit of detail.
+  // Torso in a team-coloured tunic, with a leather belt.
   b.add(new SphereGeometry(1, 9, 6), PART_TORSO, hip, 0xffffff, 1, mat(torsoC.x, torsoC.y, torsoC.z, 0, 0, 0, torsoR.x, torsoR.y, torsoR.z), 0.97);
-  b.add(new CylinderGeometry(torsoR.x * 0.96, torsoR.x * 0.98, 0.06, 9, 1, true), PART_TORSO, hip, CLOTH, 0, mat(0, 0.6, 0, 0, 0, 0, 1, 1, torsoR.z / torsoR.x));
+  b.add(new CylinderGeometry(torsoR.x * 0.96, torsoR.x * 0.98, 0.06, 9, 1, true), PART_TORSO, hip, LEATHER, 0, mat(torsoC.x, base.y + 0.6, torsoC.z, 0, 0, 0, 1, 1, torsoR.z / torsoR.x));
 
-  // Head with a little nose. Skin takes a hint of team colour so heads read as part of the team.
+  // Head with a little nose.
   b.add(new SphereGeometry(headR, 9, 7), PART_HEAD, neck, SKIN, 0, mat(headC.x, headC.y, headC.z));
   b.add(new IcosahedronGeometry(headR * 0.2, 0), PART_HEAD, neck, 0xf6b892, 0, mat(headC.x, headC.y - headR * 0.12, headC.z + headR * 0.98));
 
   // Googly eyes: big whites, pupils that slide (their own part ids so the shader can move them).
   const eyeR = headR * 0.36;
   for (const side of [1, -1]) {
-    const ec = new Vector3(headC.x + side * headR * 0.38, headC.y + headR * 0.18, headC.z + headR * 0.78);
+    const ec = v3(headC.x + side * headR * 0.38, headC.y + headR * 0.18, headC.z + headR * 0.78);
     b.add(new SphereGeometry(eyeR, 6, 4), PART_HEAD, neck, EYE_WHITE, 0, mat(ec.x, ec.y, ec.z));
     b.add(new SphereGeometry(eyeR * 0.48, 5, 3), side > 0 ? PART_PUPIL_L : PART_PUPIL_R, neck, PUPIL, 0, mat(ec.x, ec.y, ec.z + eyeR * 0.72, 0, 0, 0, 1, 1, 0.5));
   }
@@ -335,47 +240,328 @@ export function buildUnitModel(def: UnitDef): UnitModel {
     const sh = side > 0 ? shoulderL : shoulderR;
     const hand = side > 0 ? handL : handR;
     const part = side > 0 ? PART_ARM_L : PART_ARM_R;
-    const a0 = sh.clone().add(new Vector3(0, 0.02, 0));
-    const a1 = hand.clone().add(new Vector3(0, 0.05, 0));
+    const a0 = sh.clone().add(v3(0, 0.02, 0));
+    const a1 = hand.clone().add(v3(0, 0.05, 0));
     const ar = 0.065 * limb;
-    // CapsuleGeometry's length is the straight section between the two round caps.
-    const armGeo = new CapsuleGeometry(ar, Math.max(0.01, a0.distanceTo(a1) - ar), 2, 6);
-    b.add(armGeo, part, sh, 0xffffff, 1, along(a0, a1), 0.9);
+    b.add(new CapsuleGeometry(ar, Math.max(0.01, a0.distanceTo(a1) - ar), 2, 6), part, sh, 0xffffff, 1, along(a0, a1), 0.9);
     b.add(new IcosahedronGeometry(0.075 * limb, 0), part, sh, SKIN, 0, mat(hand.x, hand.y, hand.z));
   }
 
-  // Legs: short capsules and big shoes.
-  for (const side of [1, -1]) {
-    const hp = side > 0 ? hipL : hipR;
-    const part = side > 0 ? PART_LEG_L : PART_LEG_R;
-    b.add(new CapsuleGeometry(0.09 * limb, 0.26, 2, 6), part, hp, 0xffffff, 1, mat(hp.x, 0.28, 0), 0.78);
-    b.add(new SphereGeometry(1, 6, 4), part, hp, SHOE, 0, mat(hp.x, 0.055, 0.05, 0, 0, 0, 0.1 * limb, 0.065, 0.15));
+  if (seated) {
+    // A rider's legs straddle the horse; they ride along with the body.
+    for (const side of [1, -1]) {
+      const hp = side > 0 ? hipL : hipR;
+      const knee = hp.clone().add(v3(side * 0.2, -0.12, 0.22));
+      const foot = knee.clone().add(v3(side * 0.04, -0.34, -0.05));
+      b.add(new CapsuleGeometry(0.085 * limb, 0.22, 2, 6), PART_TORSO, hip, 0xffffff, 1, along(hp, knee), 0.78);
+      b.add(new CylinderGeometry(0.07 * limb, 0.075 * limb, 0.34, 6), PART_TORSO, hip, SKIN, 0, along(knee, foot));
+      b.add(new SphereGeometry(1, 5, 3), PART_TORSO, hip, SANDAL, 0, mat(foot.x, foot.y, foot.z + 0.05, 0, 0, 0, 0.08, 0.06, 0.13));
+    }
+  } else {
+    // Legs: short capsules with bare shins and sandals.
+    for (const side of [1, -1]) {
+      const hp = side > 0 ? hipL : hipR;
+      const part = side > 0 ? PART_LEG_L : PART_LEG_R;
+      b.add(new CapsuleGeometry(0.09 * limb, 0.12, 2, 6), part, hp, 0xffffff, 1, mat(hp.x, base.y + 0.36, base.z), 0.78);
+      b.add(new CylinderGeometry(0.07 * limb, 0.075 * limb, 0.24, 6), part, hp, SKIN, 0, mat(hp.x, base.y + 0.18, base.z));
+      b.add(new SphereGeometry(1, 5, 3), part, hp, SANDAL, 0, mat(hp.x, base.y + 0.05, base.z + 0.05, 0, 0, 0, 0.1 * limb, 0.06, 0.15));
+    }
   }
+  return { neck, hip, headC, headR, torsoC, torsoR, shoulderL, shoulderR, handL, handR, hipL, hipR };
+}
 
-  addHat(b, v.hat, headC, headR, neck);
-  const attackStyle = addWeapon(b, v.weapon, handR, handL, shoulderR, shoulderL);
+function addHair(b: Builder, p: Person): void {
+  const { headC: c, headR: r, neck } = p;
+  b.add(new SphereGeometry(r * 1.05, 9, 4, 0, Math.PI * 2, 0, Math.PI * 0.42), PART_HEAD, neck, HAIR, 0, mat(c.x, c.y + r * 0.04, c.z - r * 0.1, -0.25));
+}
 
-  const parts: RagdollPartShape[] = [
-    { center: torsoC.clone(), radius: Math.min(torsoR.x, torsoR.z) * 0.95, halfHeight: Math.max(0.02, torsoR.y - Math.min(torsoR.x, torsoR.z)) },
-    { center: headC.clone(), radius: headR, halfHeight: 0 },
-    { center: shoulderL.clone().add(handL).multiplyScalar(0.5), radius: 0.07 * limb, halfHeight: armLen * 0.45 },
-    { center: shoulderR.clone().add(handR).multiplyScalar(0.5), radius: 0.07 * limb, halfHeight: armLen * 0.45 },
-    { center: new Vector3(hipL.x, 0.27, 0), radius: 0.09 * limb, halfHeight: 0.14 },
-    { center: new Vector3(hipR.x, 0.27, 0), radius: 0.09 * limb, halfHeight: 0.14 },
-  ];
+/** Bronze Corinthian helmet with cheek and nose guards and a horsehair crest. */
+function addCorinthian(b: Builder, p: Person, crest: 'long' | 'transverse'): void {
+  const { headC: c, headR: r, neck } = p;
+  b.add(new SphereGeometry(r * 1.12, 8, 4, 0, Math.PI * 2, 0, Math.PI * 0.6), PART_HEAD, neck, BRONZE, 0, mat(c.x, c.y + r * 0.05, c.z - r * 0.02));
+  for (const side of [1, -1]) {
+    b.add(new BoxGeometry(r * 0.16, r * 0.62, r * 0.46), PART_HEAD, neck, BRONZE, 0, mat(c.x + side * r * 0.86, c.y - r * 0.22, c.z + r * 0.42, 0, side * 0.35, 0), 0.92);
+  }
+  b.add(new BoxGeometry(r * 0.12, r * 0.42, r * 0.1), PART_HEAD, neck, DARK_BRONZE, 0, mat(c.x, c.y + r * 0.02, c.z + r * 1.07));
+  if (crest === 'long') {
+    b.add(new TorusGeometry(r * 0.9, r * 0.2, 3, 8, Math.PI), PART_HEAD, neck, HORSEHAIR, 0, mat(c.x, c.y + r * 0.45, c.z - r * 0.08, 0, Math.PI / 2, 0, 1, 1.45, 1.6));
+  } else {
+    b.add(new TorusGeometry(r * 0.95, r * 0.17, 3, 8, Math.PI), PART_HEAD, neck, CREAM_CREST, 0, mat(c.x, c.y + r * 0.45, c.z, 0, 0, 0, 1, 1.2, 1));
+  }
+}
 
-  return {
-    geometry: b.build(),
-    layout: {
-      height: headC.y + headR,
-      neck,
-      hip,
-      shoulderL,
-      shoulderR,
-      hipL,
-      hipR,
+function addHat(b: Builder, hat: HatKind, p: Person): void {
+  const { headC: c, headR: r, neck } = p;
+  switch (hat) {
+    case 'corinthian':
+      addCorinthian(b, p, 'long');
+      break;
+    case 'spartan': {
+      addCorinthian(b, p, 'transverse');
+      // A cape in the team colour, hung from the shoulders.
+      const t = p.torsoC;
+      b.add(new BoxGeometry(p.torsoR.x * 2.1, 0.72, 0.035), PART_TORSO, p.hip, 0xffffff, 1, mat(t.x, t.y - 0.05, t.z - p.torsoR.z - 0.05, 0.12), 0.7);
+      break;
+    }
+    case 'thracian':
+      // Phrygian cap with its tip flopping forward.
+      b.add(new SphereGeometry(r * 1.08, 9, 4, 0, Math.PI * 2, 0, Math.PI * 0.5), PART_HEAD, neck, 0xb98d4a, 0, mat(c.x, c.y + r * 0.06, c.z));
+      b.add(new ConeGeometry(r * 0.5, r * 0.95, 7), PART_HEAD, neck, 0xb98d4a, 0, mat(c.x, c.y + r * 1.08, c.z + r * 0.18, 0.75), 0.92);
+      break;
+    case 'headband':
+      addHair(b, p);
+      b.add(new CylinderGeometry(r * 1.03, r * 1.04, r * 0.18, 9, 1, true), PART_HEAD, neck, LINEN, 0, mat(c.x, c.y + r * 0.38, c.z));
+      break;
+    case 'scythian':
+      // Tall pointed cap with ear flaps.
+      b.add(new ConeGeometry(r * 1.02, r * 1.55, 8), PART_HEAD, neck, 0x6f7a3a, 0, mat(c.x, c.y + r * 0.95, c.z - r * 0.08, -0.18));
+      for (const side of [1, -1]) {
+        b.add(new BoxGeometry(r * 0.12, r * 0.6, r * 0.45), PART_HEAD, neck, 0x5f6a32, 0, mat(c.x + side * r * 0.95, c.y - r * 0.2, c.z - r * 0.1));
+      }
+      break;
+    case 'pilos':
+      b.add(new ConeGeometry(r * 1.06, r * 1.05, 9), PART_HEAD, neck, BRONZE, 0, mat(c.x, c.y + r * 0.78, c.z));
+      b.add(new TorusGeometry(r * 1.0, r * 0.07, 3, 10), PART_HEAD, neck, DARK_BRONZE, 0, mat(c.x, c.y + r * 0.28, c.z, Math.PI / 2));
+      break;
+    case 'petasos':
+      // Wide-brimmed traveller's hat.
+      b.add(new CylinderGeometry(r * 1.65, r * 1.65, r * 0.06, 12), PART_HEAD, neck, 0xd2b06a, 0, mat(c.x, c.y + r * 0.5, c.z));
+      b.add(new SphereGeometry(r * 0.92, 9, 4, 0, Math.PI * 2, 0, Math.PI * 0.5), PART_HEAD, neck, 0xc4a05a, 0, mat(c.x, c.y + r * 0.5, c.z));
+      break;
+    case 'none':
+      addHair(b, p);
+      break;
+  }
+}
+
+// ---- Gear pieces ------------------------------------------------------------------------------
+
+function spear(b: Builder, p: Person, length: number, set: number): void {
+  const back = p.handR.clone().add(v3(0, 0.02, -0.5));
+  const front = p.handR.clone().add(v3(0, 0.12, length - 0.5));
+  b.add(new CylinderGeometry(0.028, 0.028, 1, 5), PART_ARM_R, p.shoulderR, WOOD, 0, between(back, front), 1, set);
+  b.add(new ConeGeometry(1, 1, 5), PART_ARM_R, p.shoulderR, BRONZE, 0, tipAt(back, front, 0.055, 0.26), 1, set);
+  b.add(new ConeGeometry(1, 1, 4), PART_ARM_R, p.shoulderR, DARK_BRONZE, 0, tipAt(front, back, 0.03, 0.1), 1, set);
+}
+
+/** Big round hoplite shield on the left forearm, with a team-coloured emblem. */
+function aspis(b: Builder, p: Person, r: number, face = BRONZE): void {
+  const c = p.handL.clone().add(v3(0.03, 0.17, 0.2));
+  b.add(new CylinderGeometry(r, r, 0.07, 10), PART_ARM_L, p.shoulderL, face, 0, mat(c.x, c.y, c.z, Math.PI / 2));
+  b.add(new TorusGeometry(r, 0.035, 3, 10), PART_ARM_L, p.shoulderL, DARK_BRONZE, 0, mat(c.x, c.y, c.z + 0.03));
+  b.add(new CylinderGeometry(r * 0.36, r * 0.36, 0.02, 8), PART_ARM_L, p.shoulderL, 0xffffff, 1, mat(c.x, c.y, c.z + 0.045, Math.PI / 2), 1.05);
+}
+
+function swordInHand(b: Builder, p: Person, set: number, length = 0.46): void {
+  const h = p.handR;
+  const tip = h.clone().add(v3(0, 0.28 * (length / 0.46), 0.36 * (length / 0.46)));
+  b.add(new BoxGeometry(0.055, 1, 0.02), PART_ARM_R, p.shoulderR, STEEL, 0, between(h.clone().add(v3(0, 0.04, 0.04)), tip), 1, set);
+  b.add(new BoxGeometry(0.17, 0.035, 0.045), PART_ARM_R, p.shoulderR, BRONZE, 0, mat(h.x, h.y + 0.05, h.z + 0.06, -0.9), 1, set);
+}
+
+function sheath(b: Builder, p: Person, set: number): void {
+  const t = p.torsoC;
+  b.add(new BoxGeometry(0.06, 0.4, 0.05), PART_TORSO, p.hip, LEATHER, 0, mat(t.x + p.torsoR.x * 0.95, t.y - 0.26, t.z + 0.05, 0.5, 0, 0.15), 0.9, set);
+}
+
+function javelinInHand(b: Builder, p: Person, set: number): void {
+  const h = p.handR;
+  const back = h.clone().add(v3(0, -0.15, -0.4));
+  const front = h.clone().add(v3(0, 0.55, 0.85));
+  b.add(new CylinderGeometry(0.02, 0.02, 1, 4), PART_ARM_R, p.shoulderR, WOOD, 0, between(back, front), 1, set);
+  b.add(new ConeGeometry(1, 1, 4), PART_ARM_R, p.shoulderR, STEEL, 0, tipAt(back, front, 0.035, 0.16), 1, set);
+}
+
+function spareJavelins(b: Builder, p: Person, n: number, set: number): void {
+  for (let k = 0; k < n; k++) {
+    const h = p.handL.clone().add(v3(0.04 + k * 0.05, 0, -0.05 + k * 0.04));
+    const back = h.clone().add(v3(0, -0.35, -0.35));
+    const front = h.clone().add(v3(0, 0.75, 0.55));
+    b.add(new CylinderGeometry(0.018, 0.018, 1, 4), PART_ARM_L, p.shoulderL, WOOD, 0, between(back, front), 0.95, set);
+    b.add(new ConeGeometry(1, 1, 4), PART_ARM_L, p.shoulderL, STEEL, 0, tipAt(back, front, 0.03, 0.14), 1, set);
+  }
+}
+
+function dagger(b: Builder, p: Person): void {
+  swordInHand(b, p, SET_SIDEARM, 0.26);
+}
+
+function hipPouch(b: Builder, p: Person, color: number): void {
+  const t = p.torsoC;
+  b.add(new IcosahedronGeometry(0.085, 0), PART_TORSO, p.hip, color, 0, mat(t.x - p.torsoR.x * 0.9, t.y - 0.24, t.z + 0.08));
+}
+
+function bow(b: Builder, p: Person): void {
+  const h = p.handL;
+  b.add(new TorusGeometry(0.44, 0.022, 3, 10, Math.PI * 0.85), PART_ARM_L, p.shoulderL, DARK_WOOD, 0, mat(h.x + 0.02, h.y + 0.08, h.z + 0.12, 0, Math.PI / 2, Math.PI / 2 + Math.PI * 0.075));
+  b.add(new CylinderGeometry(0.005, 0.005, 0.8, 3), PART_ARM_L, p.shoulderL, LINEN, 0, mat(h.x + 0.02, h.y + 0.08, h.z - 0.04));
+}
+
+function quiver(b: Builder, p: Person): void {
+  const t = p.torsoC;
+  const c = v3(t.x - 0.08, t.y + 0.12, t.z - p.torsoR.z - 0.06);
+  b.add(new CylinderGeometry(0.07, 0.06, 0.48, 6), PART_TORSO, p.hip, LEATHER, 0, mat(c.x, c.y, c.z, -0.25, 0, 0.35));
+  for (let k = 0; k < 3; k++) {
+    b.add(new ConeGeometry(0.03, 0.09, 3), PART_TORSO, p.hip, LINEN, 0, mat(c.x - 0.09 + k * 0.025, c.y + 0.27, c.z - 0.06, -0.25, 0, 0.35));
+  }
+}
+
+function sling(b: Builder, p: Person): void {
+  const h = p.handR;
+  const end = h.clone().add(v3(0, -0.34, 0.06));
+  b.add(new CylinderGeometry(0.008, 0.008, 1, 3), PART_ARM_R, p.shoulderR, LINEN, 0, between(h, end), 1, SET_MAIN);
+  b.add(new SphereGeometry(0.045, 5, 3), PART_ARM_R, p.shoulderR, LEATHER, 0, mat(end.x, end.y, end.z), 1, SET_MAIN);
+}
+
+function stoneInHand(b: Builder, p: Person): void {
+  const h = p.handR;
+  b.add(new IcosahedronGeometry(0.07, 0), PART_ARM_R, p.shoulderR, STONE, 0, mat(h.x, h.y + 0.04, h.z + 0.07), 1, SET_MAIN);
+}
+
+function addGear(b: Builder, gear: GearKind, p: Person): void {
+  switch (gear) {
+    case 'hoplite':
+      spear(b, p, 2.1, SET_ALWAYS);
+      aspis(b, p, 0.42);
+      break;
+    case 'spartan':
+      spear(b, p, 2.1, SET_MAIN);
+      swordInHand(b, p, SET_SIDEARM);
+      sheath(b, p, SET_MAIN);
+      aspis(b, p, 0.45);
+      break;
+    case 'peltast':
+      javelinInHand(b, p, SET_MAIN);
+      spareJavelins(b, p, 2, SET_MAIN);
+      swordInHand(b, p, SET_SIDEARM, 0.36);
+      aspis(b, p, 0.3, 0xa88a52);
+      break;
+    case 'skirmisher':
+      stoneInHand(b, p);
+      hipPouch(b, p, 0x9a8a62);
+      dagger(b, p);
+      break;
+    case 'archer':
+      bow(b, p);
+      quiver(b, p);
+      dagger(b, p);
+      break;
+    case 'slinger':
+      sling(b, p);
+      hipPouch(b, p, LEAD);
+      dagger(b, p);
+      break;
+    case 'horseman':
+      spear(b, p, 2.4, SET_ALWAYS);
+      break;
+    case 'marine':
+      javelinInHand(b, p, SET_MAIN);
+      swordInHand(b, p, SET_SIDEARM, 0.42);
+      sheath(b, p, SET_MAIN);
+      aspis(b, p, 0.36);
+      break;
+  }
+}
+
+/** Horse heights in canonical units. */
+const SADDLE_Y = 1.28;
+const BODY_Y = 1.02;
+const LEG_TOP = 0.95;
+const FRONT_Z = 0.55;
+const BACK_Z = -0.58;
+
+/**
+ * A stocky horse. Its front legs move as part LEG_L and back legs as LEG_R, so the walk cycle
+ * becomes a bounding gallop. Everything else rides along with the body (PART_TORSO).
+ */
+function addHorse(b: Builder): { front: Vector3; back: Vector3; hip: Vector3 } {
+  const hip = v3(0, BODY_Y, 0);
+  const front = v3(0, LEG_TOP, FRONT_Z);
+  const back = v3(0, LEG_TOP, BACK_Z);
+  const T = PART_TORSO;
+  b.add(new SphereGeometry(1, 9, 6), T, hip, HORSE, 0, mat(0, BODY_Y, 0, 0, 0, 0, 0.33, 0.36, 0.88));
+  // Neck, head, ears, mane, tail.
+  const n0 = v3(0, 1.22, 0.62);
+  const n1 = v3(0, 1.68, 0.92);
+  b.add(new CapsuleGeometry(0.15, 0.36, 2, 7), T, hip, HORSE, 0, along(n0, n1));
+  b.add(new SphereGeometry(1, 8, 6), T, hip, HORSE, 0, mat(0, 1.68, 1.1, -0.35, 0, 0, 0.14, 0.15, 0.3), 0.96);
+  b.add(new SphereGeometry(1, 6, 4), T, hip, 0x6e4730, 0, mat(0, 1.6, 1.33, -0.35, 0, 0, 0.1, 0.1, 0.1));
+  for (const side of [1, -1]) {
+    b.add(new ConeGeometry(0.04, 0.13, 4), T, hip, HORSE, 0, mat(side * 0.07, 1.86, 0.96, -0.2));
+    // Googly horse eyes (they don't slide; only the rider's do).
+    b.add(new SphereGeometry(0.055, 6, 4), T, hip, EYE_WHITE, 0, mat(side * 0.11, 1.74, 1.1));
+    b.add(new SphereGeometry(0.026, 5, 3), T, hip, PUPIL, 0, mat(side * 0.15, 1.74, 1.12));
+  }
+  b.add(new BoxGeometry(0.06, 0.12, 0.62), T, hip, MANE, 0, mat(0, 1.6, 0.74, -0.85));
+  b.add(new ConeGeometry(0.1, 0.62, 5), T, hip, MANE, 0, mat(0, 0.92, -0.98, -2.5));
+  // Team-coloured saddle cloth.
+  b.add(new BoxGeometry(0.72, 0.05, 0.62), T, hip, 0xffffff, 1, mat(0, SADDLE_Y - 0.04, -0.02, 0, 0, 0), 0.85);
+  // Legs: front pair (LEG_L) and back pair (LEG_R), with dark hooves.
+  for (const [part, z, pivot] of [[PART_LEG_L, FRONT_Z, front], [PART_LEG_R, BACK_Z, back]] as const) {
+    for (const side of [1, -1]) {
+      const top = v3(side * 0.18, LEG_TOP, z);
+      const bottom = v3(side * 0.18, 0.12, z + 0.04);
+      b.add(new CapsuleGeometry(0.075, 0.68, 2, 6), part, pivot, HORSE, 0, along(top, bottom), 0.92);
+      b.add(new CylinderGeometry(0.08, 0.09, 0.1, 5), part, pivot, HOOF, 0, mat(bottom.x, 0.05, bottom.z));
+    }
+  }
+  return { front, back, hip };
+}
+
+/** Build the merged mesh for one unit type. */
+export function buildUnitModel(def: UnitDef): UnitModel {
+  const v = def.visual;
+  const b = new Builder();
+  const horse = v.body === 'horse';
+  let horseJoints: { front: Vector3; back: Vector3; hip: Vector3 } | null = null;
+  if (horse) horseJoints = addHorse(b);
+  const p = addPerson(b, def, horse ? v3(0, SADDLE_Y - 0.48, -0.05) : v3(0, 0, 0), horse);
+  addHat(b, v.hat, p);
+  addGear(b, v.gear, p);
+
+  const limb = v.limbThickness;
+  let parts: RagdollPartShape[];
+  let layout: BodyLayout;
+  if (horseJoints) {
+    // Horse and rider: one box body, the rider's head and arms, and the two pairs of legs.
+    parts = [
+      { center: v3(0, 1.22, 0.1), radius: 0.35, halfHeight: 0, half: v3(0.34, 0.42, 0.95) },
+      { center: p.headC.clone(), radius: p.headR, halfHeight: 0 },
+      { center: p.shoulderL.clone().add(p.handL).multiplyScalar(0.5), radius: 0.07 * limb, halfHeight: 0.15 },
+      { center: p.shoulderR.clone().add(p.handR).multiplyScalar(0.5), radius: 0.07 * limb, halfHeight: 0.15 },
+      { center: v3(0, 0.52, FRONT_Z), radius: 0.08, halfHeight: 0, half: v3(0.26, 0.42, 0.09) },
+      { center: v3(0, 0.52, BACK_Z), radius: 0.08, halfHeight: 0, half: v3(0.26, 0.42, 0.09) },
+    ];
+    layout = {
+      height: p.headC.y + p.headR,
+      neck: p.neck,
+      hip: horseJoints.hip,
+      shoulderL: p.shoulderL,
+      shoulderR: p.shoulderR,
+      hipL: horseJoints.front,
+      hipR: horseJoints.back,
       parts,
-    },
-    attackStyle,
-  };
+    };
+  } else {
+    const r = Math.min(p.torsoR.x, p.torsoR.z);
+    parts = [
+      { center: p.torsoC.clone(), radius: r * 0.95, halfHeight: Math.max(0.02, p.torsoR.y - r) },
+      { center: p.headC.clone(), radius: p.headR, halfHeight: 0 },
+      { center: p.shoulderL.clone().add(p.handL).multiplyScalar(0.5), radius: 0.07 * limb, halfHeight: 0.15 },
+      { center: p.shoulderR.clone().add(p.handR).multiplyScalar(0.5), radius: 0.07 * limb, halfHeight: 0.15 },
+      { center: v3(p.hipL.x, 0.27, 0), radius: 0.09 * limb, halfHeight: 0.14 },
+      { center: v3(p.hipR.x, 0.27, 0), radius: 0.09 * limb, halfHeight: 0.14 },
+    ];
+    layout = {
+      height: p.headC.y + p.headR,
+      neck: p.neck,
+      hip: p.hip,
+      shoulderL: p.shoulderL,
+      shoulderR: p.shoulderR,
+      hipL: p.hipL,
+      hipR: p.hipR,
+      parts,
+    };
+  }
+  return { geometry: b.build(), layout, horse };
 }

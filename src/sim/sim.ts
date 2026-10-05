@@ -1,6 +1,6 @@
 import { getMap } from '../data/maps.ts';
 import { canTargetAir, type UnitDef, UNITS } from '../data/units.ts';
-import { resolveAttacks, updateStates } from './combat.ts';
+import { resolveAttacks, updateShieldWalls, updateStates } from './combat.ts';
 import {
   EV_DEATH,
   F_FELL,
@@ -124,13 +124,15 @@ export class Sim {
     w.target[i] = -1;
     // Small random delay before the first swing so a crowd never attacks in lockstep.
     w.attackCooldown[i] = this.rng.int(12);
+    w.ammo[i] = d.ammo ? d.ammo[0] + this.rng.int(d.ammo[1] - d.ammo[0] + 1) : 255;
   }
 
   /** Advance the battle by one fixed tick. */
   step(): void {
     this.events.clear();
-    // 1. Spatial hash.
+    // 1. Spatial hash (and who is standing in a shield wall).
     this.grid.rebuild(this.world);
+    updateShieldWalls(this);
     // 2 + 3. Targeting and the per-unit state machine (steering included).
     updateStates(this);
     // 4. Movement, terrain following, falling, kill plane.

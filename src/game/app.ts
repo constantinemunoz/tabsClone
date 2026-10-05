@@ -2,6 +2,7 @@ import { getMap, type MapDef } from '../data/maps.ts';
 import { UNITS } from '../data/units.ts';
 import { detectQualityTier, QUALITY_PRESETS, type QualitySettings } from '../platform/quality.ts';
 import { CameraController } from '../render/camera.ts';
+import { ProjectileRenderer } from '../render/projectiles.ts';
 import { loadRapier, RagdollSystem } from '../render/ragdolls.ts';
 import { GameScene } from '../render/scene.ts';
 import { UnitRenderer } from '../render/units.ts';
@@ -38,6 +39,7 @@ export class App {
   readonly sim = new SimClient();
   readonly ragdolls: RagdollSystem;
   readonly units: UnitRenderer;
+  readonly projectiles: ProjectileRenderer;
   quality: QualitySettings;
   map!: MapDef;
   terrain!: Terrain;
@@ -62,7 +64,11 @@ export class App {
     this.overlay.stats.tier = this.quality.tier;
     this.ragdolls = new RagdollSystem(this.quality.ragdollBudget, this.quality.corpseCap);
     this.units = new UnitRenderer(this.scene.scene, this.ragdolls, MAX_UNITS);
-    this.sim.eventSink = this.units.onEvents;
+    this.projectiles = new ProjectileRenderer(this.scene.scene);
+    this.sim.eventSink = (ev, offset, count) => {
+      this.units.onEvents(ev, offset, count);
+      this.projectiles.onEvents(ev, offset, count);
+    };
     this.sim.snapshotSink = this.units.onSnapshot;
     this.banner = document.createElement('div');
     this.banner.className = 'dev-banner';
@@ -148,6 +154,7 @@ export class App {
       teams[i] = setup.units[i].team;
     }
     this.units.build(UNITS, types, teams, n);
+    this.projectiles.clear();
     this.banner.hidden = true;
     this.overlay.stats.units = n;
     if (this.speed === 0) this.speed = this.pausedSpeed || 1;
@@ -180,6 +187,7 @@ export class App {
       const alpha = sim.alpha();
       const u0 = performance.now();
       this.units.update(sim, alpha, dt * this.speed);
+      this.projectiles.update(sim, alpha, dt * this.speed);
       this.overlay.stats.updateMs = performance.now() - u0;
       const s = this.overlay.stats;
       const c = sim.curr;

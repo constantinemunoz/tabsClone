@@ -15,9 +15,10 @@ describe('unit models', () => {
       for (let p = 0; p <= PART_PUPIL_R; p++) expect(seen.has(p)).toBe(true);
       expect(m.layout.parts.length).toBe(6);
       console.log(`${d.id}: ${verts} vertices, ${tris} triangles`);
-      // Keep bodies light: hundreds of these are on screen at once.
-      expect(verts).toBeLessThan(1200);
-      expect(tris).toBeLessThan(1000);
+      // Keep bodies light: hundreds of these are on screen at once. Horse and rider get more.
+      const horse = d.visual.body === 'horse';
+      expect(verts).toBeLessThan(horse ? 1900 : 1300);
+      expect(tris).toBeLessThan(horse ? 1800 : 1200);
     });
   }
 });

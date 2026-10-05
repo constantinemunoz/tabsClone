@@ -17,6 +17,11 @@ const TUMBLE_BOUNCE = 0.32;
 const TUMBLE_FRICTION_DECEL = 11;
 /** Landings harder than this (m/s downward) emit a landing event. */
 const LAND_EVENT_SPEED = 3.5;
+/**
+ * Slope is judged over this fixed distance ahead, not over the tick's step, so a unit inching
+ * forward a centimetre at a time can't creep up a cliff that a full step would refuse.
+ */
+const SLOPE_PROBE = 0.4;
 
 /** Try to move unit i horizontally to (nx, nz) along the ground. Returns false if a slope blocks it. */
 function walkTo(sim: Sim, i: number, nx: number, nz: number): boolean {
@@ -33,8 +38,14 @@ function walkTo(sim: Sim, i: number, nx: number, nz: number): boolean {
     w.flags[i] |= F_AIRBORNE;
     return true;
   }
+  if (run > 1e-6) {
+    const k = SLOPE_PROBE / run;
+    const ahead = groundHeight(t, w.px[i] + ddx * k, w.pz[i] + ddz * k);
+    const here = groundHeight(t, w.px[i], w.pz[i]);
+    if (ahead !== VOID_HEIGHT && here !== VOID_HEIGHT && ahead - here > SLOPE_PROBE * MAX_WALK_SLOPE) return false;
+  }
   const rise = h1 - w.py[i];
-  if (rise > run * MAX_WALK_SLOPE + 0.02) return false;
+  if (rise > run * MAX_WALK_SLOPE + 0.005) return false;
   w.px[i] = nx;
   w.pz[i] = nz;
   if (rise < -(run * MAX_WALK_SLOPE * 1.25 + 0.08)) {

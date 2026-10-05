@@ -7,11 +7,15 @@ import type { BattleSetup } from '../sim/sim.ts';
  * exist (Milestone 5 replaces it). Preset armies, a map picker and the controls.
  */
 export const PRESETS: { name: string; blue: string; red: string }[] = [
-  { name: 'Mixed melee', blue: 'scrapper*30,pikeling*12,bulwark*8,rammer*6,biglump*1', red: 'scrapper*30,pikeling*12,bulwark*8,rammer*6,biglump*1' },
-  { name: 'Giants vs crowd', blue: 'biglump*2', red: 'scrapper*70' },
-  { name: 'Rammer charge', blue: 'rammer*12', red: 'pikeling*20,scrapper*24' },
-  { name: 'Shield wall', blue: 'bulwark*16', red: 'scrapper*50' },
-  { name: 'Scrapper brawl', blue: 'scrapper*40', red: 'scrapper*40' },
+  {
+    name: 'Greek armies',
+    blue: 'hoplite*18,spartan*4,marine*6,peltast*8,skirmisher*8,slinger*8,archer*8,horseman*4',
+    red: 'hoplite*18,spartan*4,marine*6,peltast*8,skirmisher*8,slinger*8,archer*8,horseman*4',
+  },
+  { name: 'Phalanx vs slingers', blue: 'hoplite*24', red: 'slinger*26' },
+  { name: 'Cavalry flank', blue: 'hoplite*12,horseman*8', red: 'hoplite*12,archer*16' },
+  { name: 'Spartans vs crowd', blue: 'spartan*8', red: 'skirmisher*30,peltast*10' },
+  { name: 'Javelin duel', blue: 'peltast*16,marine*8', red: 'peltast*16,marine*8' },
 ];
 
 export function presetSetup(index: number, mapId: string, seed: number): BattleSetup {

@@ -74,3 +74,33 @@ Choices the brief did not settle, one or two lines each.
   game's own code ships unminified. The normal `npm run build` stays fully self-contained.
   Where a host forbids WebAssembly compilation, Rapier fails to load, the game falls back to the
   shader-only ragdolls, and the test panel says so.
+- **Roster**: replaced the brief's ten archetypes with the user's eight Greek units. Flyers, area
+  damage, cone attacks and minimum range remain as tested engine features without a unit using
+  them. "Hoplite" and "Archer" also exist as TABS unit names; they are generic historical words
+  and were the user's explicit choice. Marines are "good on boats" in the request; the game has
+  no water, so that is in LATER.md.
+- **Armour classes**: none / light / heavy. Heavy: Hoplite, Spartan, Marine. Light: Peltast,
+  Horseman. None: Skirmisher, Archer, Slinger. Weapons can carry a damage multiplier per class
+  (only sling bullets use one: 2.4x against heavy).
+- **Shield wall**: counts same-type allies within 2.4 m that stand beside the unit (the angle to
+  them is more than about 53 degrees off its facing), up to 3. Each cuts damage by 12% and
+  knockback by about 10%. Allies directly in front or behind don't count, so a line beats a blob.
+- **Shields**: a shield cuts damage from the front 120 degrees (projectiles included) and 40% of
+  the knockback; flank hits (outside the front 160 degrees) take the weapon's flank multiplier.
+- **Sidearms**: a unit's main weapon gives way to its sidearm when out of ammo, when an enemy is
+  inside 1.3x the sidearm's reach (ranged mains), or inside the sidearm's reach (melee mains).
+  The drawn weapon is a unit flag, so the model shows the right gear.
+- **Horseman**: prefers ranged targets, rides out to the flank (the battle line runs along x, so
+  it aims at a point offset in z, shrinking as it closes), and its first hit after a 10 m run-up
+  does 4.5x damage with 5x knockback. Ordinary melee is weak, as asked; no hit-and-run.
+- **Horse animation**: front legs and back legs move as the two leg parts, giving a bounding
+  gallop; the horse falls on its side in the shader-only death flop.
+- **Ranged reach and height**: effective range grows by 0.8 m per metre the shooter stands above
+  the target (up to +40%) and shrinks when shooting uphill (down to -30%).
+- **Balance method**: equal-cost round robin in Node (`pure` armies of one type, 450 cost a side,
+  two seeds, both sides). Tuned costs until every unit wins some match-ups: Hoplite 45,
+  Spartan 70, Peltast 32, Skirmisher 16, Archer 36, Slinger 36, Horseman 50, Marine 46.
+- **Slope rule**: walkability is judged over a fixed 0.4 m probe ahead, not the tick's step, so a
+  slowly accelerating unit can't creep up a cliff a centimetre at a time.
+- **Shield emblem in team colour**: shields are the biggest thing in a phalanx, so a small team-
+  coloured centre disc helps tell sides apart; the rest of the gear stays neutral.

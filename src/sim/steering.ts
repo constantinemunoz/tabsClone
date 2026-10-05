@@ -10,8 +10,17 @@ import type { Sim } from './sim.ts';
 export function desiredDirection(sim: Sim, i: number, tx: number, tz: number, out: Float32Array): void {
   const w = sim.world;
   const dx = tx - w.px[i];
-  const dz = tz - w.pz[i];
-  const len = Math.sqrt(dx * dx + dz * dz);
+  let dz = tz - w.pz[i];
+  let len = Math.sqrt(dx * dx + dz * dz);
+  if (sim.defs[w.type[i]].flanker && len > 12) {
+    // Flankers swing wide around the side of the battle line (armies face each other along x,
+    // so the flanks are toward +z and -z), converging on the target as they close in.
+    const side = w.pz[i] > 1 ? 1 : w.pz[i] < -1 ? -1 : (i & 1) === 1 ? 1 : -1;
+    const play = sim.terrain.play;
+    const oz = Math.min(play.maxZ - 4, Math.max(play.minZ + 4, tz + side * Math.min(len * 0.45, 22)));
+    dz = oz - w.pz[i];
+    len = Math.sqrt(dx * dx + dz * dz);
+  }
   if (len < 1e-5) {
     out[0] = 0;
     out[1] = 0;

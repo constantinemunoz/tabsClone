@@ -40,6 +40,14 @@ export class World {
   readonly restTicks: Int16Array;
   /** Hover altitude for flyers, remembered while over the void. */
   readonly hoverY: Float32Array;
+  /** Shots left for a ranged main weapon (255 = unlimited). */
+  readonly ammo: Uint8Array;
+  /** Weapon chosen for the current attack: 0 main, 1 sidearm. */
+  readonly weaponSel: Uint8Array;
+  /** Shield wall: same-type allies standing beside this unit (updated every tick). */
+  readonly wallCount: Uint8Array;
+  /** Total damage this unit has dealt (for stats and tests). */
+  readonly damageDealt: Float32Array;
 
   constructor(capacity: number) {
     this.capacity = capacity;
@@ -70,5 +78,9 @@ export class World {
     this.lastImpZ = f();
     this.restTicks = new Int16Array(capacity);
     this.hoverY = f();
+    this.ammo = new Uint8Array(capacity).fill(255);
+    this.weaponSel = new Uint8Array(capacity);
+    this.wallCount = new Uint8Array(capacity);
+    this.damageDealt = f();
   }
 }

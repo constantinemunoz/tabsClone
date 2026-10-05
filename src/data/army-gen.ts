@@ -44,26 +44,27 @@ export function formation(entries: { type: number; count: number }[], team: numb
   return out;
 }
 
-/** A mixed army of roughly n units, weighted toward cheap units, for stress tests and benchmarks. */
+/**
+ * A mixed army of n units across the whole roster, for stress tests and benchmarks.
+ * Listed front to back: the phalanx leads, missile troops behind it, cavalry at the rear.
+ */
 export function mixedArmy(n: number): { type: number; count: number }[] {
-  const pick = (id: string) => unitIndex(id);
-  const giants = Math.max(0, Math.round(n / 75));
-  const rest = n - giants;
   const mix: [string, number][] = [
-    ['rammer', 0.12],
-    ['bulwark', 0.14],
-    ['pikeling', 0.18],
-    ['scrapper', 0.56],
+    ['hoplite', 0.3],
+    ['spartan', 0.07],
+    ['marine', 0.1],
+    ['peltast', 0.12],
+    ['skirmisher', 0.12],
+    ['slinger', 0.11],
+    ['archer', 0.12],
+    ['horseman', 0.06],
   ];
-  const out: { type: number; count: number }[] = [];
-  let used = 0;
-  for (let k = 0; k < mix.length; k++) {
-    const c = k === mix.length - 1 ? rest - used : Math.round(rest * mix[k][1]);
-    used += c;
-    out.push({ type: pick(mix[k][0]), count: c });
-  }
-  if (giants > 0) out.push({ type: pick('biglump'), count: giants });
-  return out.filter((e) => e.type >= 0 && e.count > 0);
+  const counts = mix.map(([, f]) => Math.round(n * f));
+  // Put any rounding difference into the hoplites.
+  counts[0] += n - counts.reduce((a, b) => a + b, 0);
+  return mix
+    .map(([id], k) => ({ type: unitIndex(id), count: counts[k] }))
+    .filter((e) => e.type >= 0 && e.count > 0);
 }
 
 /** N against N on the given map. */

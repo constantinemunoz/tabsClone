@@ -291,7 +291,13 @@ export class RagdollSystem {
       this.sv.y = 0;
       this.sv.z = spinZ;
       body.setAngvel(this.sv, true);
-      const cd = (shape.halfHeight > 0 ? R.ColliderDesc.capsule(shape.halfHeight * s, shape.radius * s) : R.ColliderDesc.ball(shape.radius * s))
+      const cd = (
+        shape.half
+          ? R.ColliderDesc.cuboid(shape.half.x * s, shape.half.y * s, shape.half.z * s)
+          : shape.halfHeight > 0
+            ? R.ColliderDesc.capsule(shape.halfHeight * s, shape.radius * s)
+            : R.ColliderDesc.ball(shape.radius * s)
+      )
         .setDensity(p === 0 ? 1.4 : 0.9)
         .setFriction(0.9)
         .setRestitution(0.2)

@@ -8,7 +8,7 @@ import {
   type MeshLambertMaterial,
   type Scene,
 } from 'three';
-import type { UnitDef } from '../data/units.ts';
+import { attackStyleIndex, type UnitDef } from '../data/units.ts';
 import type { SimClient } from '../game/sim-client.ts';
 import {
   EV_DEATH,
@@ -17,6 +17,7 @@ import {
   EV_LAUNCH,
   EV_STRIKE,
   F_AIRBORNE,
+  F_SIDEARM,
   S_DEAD,
   S_GETTING_UP,
   S_RECOVER,
@@ -26,7 +27,7 @@ import {
 } from '../sim/constants.ts';
 import { EVENT_STRIDE } from '../sim/events.ts';
 import { groundHeight, type Terrain, VOID_HEIGHT } from '../sim/terrain.ts';
-import { HEADER_FLOATS, U_FLAGS, U_PROGRESS, U_STATE, U_VX, U_VY, U_VZ, UNIT_STRIDE } from '../sim/snapshot.ts';
+import { HEADER_FLOATS, U_AUX, U_FLAGS, U_PROGRESS, U_STATE, U_VX, U_VY, U_VZ, UNIT_STRIDE } from '../sim/snapshot.ts';
 import { BlobShadows } from './blob-shadows.ts';
 import { POSE_TEXELS, type RagdollSystem, type UnitPoses } from './ragdolls.ts';
 import { createLiveMaterial, createPosedMaterial, unitTime } from './unit-material.ts';
@@ -113,6 +114,11 @@ export class UnitRenderer {
   private fAir = new Uint8Array(0);
   private terrain: Terrain | null = null;
   private airborne = new Uint8Array(0);
+  /** 1 while the unit has its sidearm out. */
+  private sidearm = new Uint8Array(0);
+  /** Shield-wall brace (0..1), eased toward whether the unit stands in a wall. */
+  private brace = new Float32Array(0);
+  private aux = new Float32Array(0);
   private readonly pose4 = new Float32Array(4);
   /** Visual clock (seconds), advanced by real time x battle speed. */
   time = 0;
@@ -165,6 +171,9 @@ export class UnitRenderer {
     this.fvz = f();
     this.fAir = new Uint8Array(count);
     this.airborne = new Uint8Array(count);
+    this.sidearm = new Uint8Array(count);
+    this.brace = f();
+    this.aux = f();
     for (let i = 0; i < count; i++) {
       // A per-unit random seed for the shader (idle sway, stumble, flail), stable per slot.
       this.seed[i] = ((Math.imul(i + 1, 2654435761) >>> 0) % 10007) / 10007;
@@ -192,7 +201,7 @@ export class UnitRenderer {
       const buffer = new InstancedInterleavedBuffer(data, LIVE_FLOATS, 1);
       buffer.setUsage(DynamicDrawUsage);
       const geo = new InstancedBufferGeometry();
-      for (const name of ['position', 'color', 'aPart', 'aPivot', 'aTint']) geo.setAttribute(name, model.geometry.getAttribute(name));
+      for (const name of ['position', 'color', 'aPart', 'aPivot', 'aTint', 'aSet']) geo.setAttribute(name, model.geometry.getAttribute(name));
       geo.setIndex(model.geometry.index);
       geo.setAttribute('iPosYaw', new InterleavedBufferAttribute(buffer, 4, 0));
       geo.setAttribute('iSpring', new InterleavedBufferAttribute(buffer, 4, 4));
@@ -201,7 +210,14 @@ export class UnitRenderer {
       geo.setAttribute('iState', new InterleavedBufferAttribute(buffer, 4, 16));
       geo.instanceCount = n;
       const floppy = Math.min(1.6, Math.max(0.4, 70 / v.wobbleStiffness));
-      const lm = createLiveMaterial(model.layout, v.scale, model.attackStyle, floppy);
+      const def = defs[t];
+      const lm = createLiveMaterial(model.layout, {
+        scale: v.scale,
+        attackStyle: attackStyleIndex(def.weapon.style),
+        sidearmStyle: attackStyleIndex((def.sidearm ?? def.weapon).style),
+        floppy,
+        horse: model.horse,
+      });
       const mesh = new Mesh(geo, lm.material);
       mesh.customDepthMaterial = lm.depth;
       mesh.frustumCulled = false;
@@ -215,7 +231,7 @@ export class UnitRenderer {
       const attr = new InstancedBufferAttribute(pdata, 4);
       attr.setUsage(DynamicDrawUsage);
       const pgeo = new InstancedBufferGeometry();
-      for (const name of ['position', 'color', 'aPart', 'aPivot', 'aTint']) pgeo.setAttribute(name, model.geometry.getAttribute(name));
+      for (const name of ['position', 'color', 'aPart', 'aPivot', 'aTint', 'aSet']) pgeo.setAttribute(name, model.geometry.getAttribute(name));
       pgeo.setIndex(model.geometry.index);
       pgeo.setAttribute('iPose', attr);
       pgeo.instanceCount = 0;
@@ -330,7 +346,10 @@ export class UnitRenderer {
       P.state[i] = st;
       const pp = prev[o + U_STATE] === st ? prev[o + U_PROGRESS] : 0;
       P.progress[i] = pp + (curr[o + U_PROGRESS] - pp) * alpha;
-      this.airborne[i] = (curr[o + U_FLAGS] & F_AIRBORNE) !== 0 ? 1 : 0;
+      const flags = curr[o + U_FLAGS];
+      this.airborne[i] = (flags & F_AIRBORNE) !== 0 ? 1 : 0;
+      this.sidearm[i] = (flags & F_SIDEARM) !== 0 ? 1 : 0;
+      this.aux[i] = curr[o + U_AUX];
     }
 
     // 2. Ragdolls step and write their poses.
@@ -383,17 +402,23 @@ export class UnitRenderer {
           this.walk[i] += dt * 15;
           amount = 1;
         } else {
-          this.walk[i] += (speed / v.scale) * dt * 5.2;
+          // One full cycle (two steps) per stride length, scaled with the body.
+          this.walk[i] += (speed / (v.stride * v.scale)) * dt * 6.283185;
           amount = Math.min(1.25, speed / (1.4 * Math.sqrt(v.scale)));
         }
         if (this.walk[i] > 1000) this.walk[i] -= 6.283185 * 159;
 
-        // Attack phase: 0 rest, 0..1 wind-up, 1..1.25 strike, 1.25..2 recovery.
+        // Attack phase: 0 rest, 0..1 wind-up, 1..1.25 strike, 1.25..2 recovery; +4 with the sidearm.
         const pr = P.progress[i];
         let atk = 0;
         if (st === S_WINDUP) atk = pr;
         else if (st === S_STRIKE) atk = 1 + 0.25 * pr;
         else if (st === S_RECOVER) atk = 1.25 + 0.75 * pr;
+        if (atk > 0 && this.sidearm[i]) atk += 4;
+
+        // Shield wall: raise the shield while standing in one.
+        const wallTarget = d.shieldWall && st !== S_TUMBLING ? Math.min(1, this.aux[i]) : 0;
+        this.brace[i] += (wallTarget - this.brace[i]) * Math.min(1, dt * 6);
 
         // Which body is showing: the wobbly live one, a fallback pose, or a ragdoll/corpse.
         let mode = MODE_ALIVE;
@@ -450,10 +475,10 @@ export class UnitRenderer {
         data[o + 13] = mode === MODE_ALIVE ? amount : 0;
         data[o + 14] = mode === MODE_ALIVE ? atk : 0;
         data[o + 15] = this.seed[i];
-        data[o + 16] = this.teams[i];
+        data[o + 16] = this.teams[i] + 2 * this.sidearm[i];
         data[o + 17] = mode;
         data[o + 18] = mt;
-        data[o + 19] = mp;
+        data[o + 19] = mode === MODE_ALIVE ? this.brace[i] : mp;
 
         if (mode === MODE_ALIVE || mode === MODE_TUMBLE || mode === MODE_GETUP) {
           sh.add(px, py, pz, d.radius * 1.25);
@@ -479,7 +504,7 @@ export class UnitRenderer {
       const o = pb.count * 4;
       pb.data[o] = r;
       pb.data[o + 1] = 0;
-      pb.data[o + 2] = this.teams[u];
+      pb.data[o + 2] = this.teams[u] + 2 * this.sidearm[u];
       pb.data[o + 3] = 0;
       pb.count++;
       const to = r * POSE_TEXELS * 4;
@@ -495,7 +520,7 @@ export class UnitRenderer {
       const o = pb.count * 4;
       pb.data[o] = cr;
       pb.data[o + 1] = 1;
-      pb.data[o + 2] = this.teams[u];
+      pb.data[o + 2] = this.teams[u] + 2 * this.sidearm[u];
       pb.data[o + 3] = rd.unitSink[u];
       pb.count++;
       if (rd.unitSink[u] < 0.3) {
