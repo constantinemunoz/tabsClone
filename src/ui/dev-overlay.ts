@@ -12,6 +12,8 @@ export interface DevStats {
   tier: string;
   simTick: number;
   snapshotBuffers: number;
+  updateMs: number;
+  renderMs: number;
 }
 
 /**
@@ -32,6 +34,8 @@ export class DevOverlay {
     tier: '',
     simTick: 0,
     snapshotBuffers: 0,
+    updateMs: 0,
+    renderMs: 0,
   };
   visible = false;
   private readonly el: HTMLDivElement;
@@ -81,6 +85,7 @@ export class DevOverlay {
         `fps        ${fps.toFixed(0)}\n` +
         `frame ms   ${this.avgFrameMs.toFixed(2)}  (max ${this.frameMax.toFixed(1)})\n` +
         `script ms  ${this.avgScriptMs.toFixed(2)}  (max ${this.scriptMax.toFixed(1)})\n` +
+        `  units    ${s.updateMs.toFixed(2)}  render ${s.renderMs.toFixed(2)}\n` +
         `tick ms    ${s.tickMs.toFixed(2)}  (max ${s.tickMsMax.toFixed(2)})\n` +
         `draw calls ${s.drawCalls}\n` +
         `triangles  ${(s.triangles / 1000).toFixed(0)}k\n` +

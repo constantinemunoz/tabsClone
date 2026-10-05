@@ -91,3 +91,31 @@ html, body {
   font-weight: 800;
   pointer-events: none !important;
 }
+
+.dev-panel {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  width: 236px;
+  padding: 12px;
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+.dev-panel-title { font-weight: 800; font-size: 15px; margin-bottom: 8px; }
+.dev-panel select { width: 100%; margin-bottom: 8px; font: inherit; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--panel-edge); background: #fff; }
+.dev-panel-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dev-panel button {
+  font: inherit;
+  font-weight: 700;
+  padding: 7px 6px;
+  border: 0;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 2px 0 rgba(29, 36, 51, 0.2);
+  cursor: pointer;
+}
+.dev-panel button:hover { background: var(--accent); color: var(--accent-ink); }
+.dev-panel-help { margin-top: 10px; color: var(--ink-soft); line-height: 1.6; font-size: 12px; }

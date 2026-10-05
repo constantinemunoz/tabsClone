@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "bench": "node bench/bench.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bench:ragdolls": "node bench/ragdolls.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",

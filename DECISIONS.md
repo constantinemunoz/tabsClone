@@ -44,3 +44,28 @@ Choices the brief did not settle, one or two lines each.
   sounds and the body lurch.
 - **Unit order**: the five melee archetypes are defined as data in M2 (tests use them); their
   procedural looks arrive in M3, the other five units in M4.
+- **Wobble spring units**: a 3D offset in metres at head height of a 1.6 m unit, kept in world
+  space on the main thread; the shader rotates it into the unit's frame. Locomotion drives it
+  with minus the per-tick velocity change, clamped to 1.2 m/s, so knockback (which is a big
+  velocity jump) is driven by the hit event instead and the upper body moves with the blow.
+- **Hit flash**: proportional to damage over max health, so chip damage on a giant barely shows.
+- **Unit meshes stay indexed**: flat shading comes from screen-space derivatives, so shared
+  vertices don't smooth anything, and the wobble shader runs about 4x fewer times per unit.
+- **Two materials per unit type**: live (wobble) and posed (ragdoll/corpse parts from a float
+  texture). Each gets a matching depth material so the optional shadow map deforms too.
+- **Pose textures**: one small texture for active ragdolls (fully re-uploaded per frame, at most
+  64 rows x 12 texels) and one for frozen corpses (uploaded only when a corpse is added).
+  three's per-range texture updates allocate per range, so they aren't used.
+- **Ragdoll budget policy**: a death may take a tumbling unit's ragdoll (that unit continues
+  with the shader tumble); in-flight death ragdolls are never frozen early, because that leaves
+  bodies hanging in mid-air. Without a slot, a death uses the shader flop, which flies a simple
+  ballistic arc from the death velocity before toppling.
+- **Ragdolls freeze** when at rest, at 3 s if moving slowly, or at 6 s regardless; below the kill
+  plane they are discarded. Physics steps at 60 Hz, at most 2 substeps per frame.
+- **Physics warm-up**: the first Rapier steps are slow (WASM tier-up), so a throwaway body is
+  dropped when the terrain collider is built. Measured: the first-death spike went from 80 ms
+  to none; the one-off cost moved to loading.
+- **Ragdoll collider**: a trimesh of the walkable terrain mesh (plus the top band of island
+  cliffs), shared with the renderer's data so ragdolls rest exactly on the drawn ground.
+- **Skin is not team-tinted**: tinted skin looked muddy. Team colour is on clothes and limbs.
+- **Temporary dev panel**: preset battles and a map picker until the real menus exist (M5).

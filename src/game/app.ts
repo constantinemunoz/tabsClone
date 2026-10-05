@@ -2,6 +2,7 @@ import { getMap, type MapDef } from '../data/maps.ts';
 import { UNITS } from '../data/units.ts';
 import { detectQualityTier, QUALITY_PRESETS, type QualitySettings } from '../platform/quality.ts';
 import { CameraController } from '../render/camera.ts';
+import { loadRapier, RagdollSystem } from '../render/ragdolls.ts';
 import { GameScene } from '../render/scene.ts';
 import { UnitRenderer } from '../render/units.ts';
 import { RESULT_BLUE, RESULT_RED, RESULT_RUNNING } from '../sim/constants.ts';
@@ -23,15 +24,19 @@ import { SimClient } from './sim-client.ts';
 /** Battle speeds selectable with the number keys (index 0 is pause). */
 export const SPEEDS = [0, 0.25, 1, 2];
 
+/** Most units a battle can hold on any tier; sizes the shadow pool. */
+const MAX_UNITS = 1200;
+
 /**
- * Top-level glue: owns the scene, camera, overlay, the simulation client and the frame loop.
- * Pauses everything while the tab is hidden.
+ * Top-level glue: owns the scene, camera, overlay, the simulation client, the unit renderer and
+ * the frame loop. Pauses everything while the tab is hidden.
  */
 export class App {
   readonly scene: GameScene;
   readonly cam: CameraController;
   readonly overlay: DevOverlay;
   readonly sim = new SimClient();
+  readonly ragdolls: RagdollSystem;
   readonly units: UnitRenderer;
   quality: QualitySettings;
   map!: MapDef;
@@ -40,6 +45,7 @@ export class App {
   speed = 1;
   private pausedSpeed = 1;
   private banner: HTMLDivElement;
+  private rapierLoading = false;
 
   private raf = 0;
   private lastFrame = 0;
@@ -52,7 +58,10 @@ export class App {
     this.cam = new CameraController(this.scene.camera, canvas);
     this.overlay = new DevOverlay(ui);
     this.overlay.stats.tier = this.quality.tier;
-    this.units = new UnitRenderer(this.scene.scene);
+    this.ragdolls = new RagdollSystem(this.quality.ragdollBudget, this.quality.corpseCap);
+    this.units = new UnitRenderer(this.scene.scene, this.ragdolls, MAX_UNITS);
+    this.sim.eventSink = this.units.onEvents;
+    this.sim.snapshotSink = this.units.onSnapshot;
     this.banner = document.createElement('div');
     this.banner.className = 'dev-banner';
     this.banner.hidden = true;
@@ -65,21 +74,47 @@ export class App {
     window.addEventListener('keydown', this.onKey);
   }
 
+  /** Load the ragdoll physics engine in the background, after the first frames are on screen. */
+  loadPhysicsLater(): void {
+    if (this.rapierLoading) return;
+    this.rapierLoading = true;
+    const go = () => {
+      loadRapier()
+        .then((R) => {
+          this.ragdolls.attachPhysics(R);
+          if (this.scene.terrainData) {
+            this.ragdolls.setTerrain(this.scene.terrainData.physicsVertices, this.scene.terrainData.physicsIndices, this.terrain.killY);
+          }
+        })
+        .catch((err: unknown) => {
+          // Without Rapier everything still works: deaths and tumbles use the shader fallbacks.
+          console.warn('Ragdoll physics unavailable, using shader fallbacks.', err);
+        });
+    };
+    setTimeout(go, 300);
+  }
+
   private onKey = (e: KeyboardEvent): void => {
     if (e.repeat) return;
+    const a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'SELECT')) return;
     if (e.code === 'Space') {
       e.preventDefault();
-      if (this.speed > 0) {
-        this.pausedSpeed = this.speed;
-        this.speed = 0;
-      } else {
-        this.speed = this.pausedSpeed;
-      }
+      this.togglePause();
     } else if (e.code === 'Digit1') this.speed = SPEEDS[1];
     else if (e.code === 'Digit2') this.speed = SPEEDS[2];
     else if (e.code === 'Digit3') this.speed = SPEEDS[3];
     else if (e.code === 'KeyR' && this.setup) void this.startBattle(this.setup);
   };
+
+  togglePause(): void {
+    if (this.speed > 0) {
+      this.pausedSpeed = this.speed;
+      this.speed = 0;
+    } else {
+      this.speed = this.pausedSpeed || 1;
+    }
+  }
 
   loadMap(id: string): void {
     this.map = getMap(id);
@@ -87,11 +122,19 @@ export class App {
     this.scene.setMap(this.map, this.terrain);
     this.cam.setTerrain(this.terrain, this.map.play);
     this.cam.setView(0, 0, Math.PI * 0.5 + 0.35, 0.62, 85);
+    this.units.setTerrain(this.terrain);
+    if (this.scene.terrainData) {
+      this.ragdolls.setTerrain(this.scene.terrainData.physicsVertices, this.scene.terrainData.physicsIndices, this.terrain.killY);
+    }
   }
 
   async startBattle(setup: BattleSetup): Promise<void> {
     this.setup = setup;
     if (!this.map || this.map.id !== setup.mapId) this.loadMap(setup.mapId);
+    else if (this.scene.terrainData) {
+      // Same map: just clear the physics world of old ragdolls.
+      this.ragdolls.setTerrain(this.scene.terrainData.physicsVertices, this.scene.terrainData.physicsIndices, this.terrain.killY);
+    }
     const n = setup.units.length;
     const types = new Uint8Array(n);
     const teams = new Uint8Array(n);
@@ -102,6 +145,7 @@ export class App {
     this.units.build(UNITS, types, teams, n);
     this.banner.hidden = true;
     this.overlay.stats.units = n;
+    if (this.speed === 0) this.speed = this.pausedSpeed || 1;
     await this.sim.start(setup, n);
   }
 
@@ -129,7 +173,9 @@ export class App {
     const sim = this.sim;
     if (sim.ready && sim.curr) {
       const alpha = sim.alpha();
-      this.units.update(sim, alpha);
+      const u0 = performance.now();
+      this.units.update(sim, alpha, dt * this.speed);
+      this.overlay.stats.updateMs = performance.now() - u0;
       const s = this.overlay.stats;
       const c = sim.curr;
       s.tickMs = c[H_TICK_MS];
@@ -138,14 +184,16 @@ export class App {
       s.projectiles = c[H_PROJECTILES];
       s.simTick = c[H_TICK];
       s.snapshotBuffers = c[H_BUFFERS_ALLOCATED];
+      s.ragdolls = this.units.activeRagdolls;
       const result = c[H_RESULT];
       if (result !== RESULT_RUNNING && this.banner.hidden) {
         this.banner.hidden = false;
-        this.banner.textContent =
-          result === RESULT_BLUE ? 'Blue wins' : result === RESULT_RED ? 'Red wins' : 'Draw';
+        this.banner.textContent = result === RESULT_BLUE ? 'Blue wins' : result === RESULT_RED ? 'Red wins' : 'Draw';
       }
     }
+    const r0 = performance.now();
     this.scene.render();
+    this.overlay.stats.renderMs = performance.now() - r0;
     sim.advance(dt, this.speed);
 
     const info = this.scene.renderer.info.render;

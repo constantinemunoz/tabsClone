@@ -21,6 +21,8 @@ const MAX_CATCH_UP = 4;
 const MAX_IN_FLIGHT = 6;
 
 export type EventSink = (events: Float32Array, offset: number, count: number) => void;
+/** Called after every snapshot arrives, with the previous and new snapshot. */
+export type SnapshotSink = (prev: Float32Array, curr: Float32Array) => void;
 
 /**
  * Main-thread side of the simulation worker.
@@ -45,6 +47,7 @@ export class SimClient {
   private readonly stepMsg: { t: 'step'; n: number; ret: ArrayBuffer[] } = { t: 'step', n: 0, ret: [] };
   private onReady: (() => void) | null = null;
   eventSink: EventSink | null = null;
+  snapshotSink: SnapshotSink | null = null;
   /** Diagnostic: snapshot buffers the main thread has seen created (should stay small). */
   buffersSeen = 0;
 
@@ -83,6 +86,7 @@ export class SimClient {
       if (this.prev) this.returnList.push(this.prev.buffer as ArrayBuffer);
       this.prev = this.curr;
       this.curr = view;
+      if (this.prev && this.snapshotSink) this.snapshotSink(this.prev, view);
       if (!this.ready && this.prev) {
         this.ready = true;
         this.onReady?.();
